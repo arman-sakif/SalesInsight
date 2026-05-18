@@ -1148,6 +1148,7 @@ name = "salesinsight"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "dbt-core" },
     { name = "dbt-duckdb" },
     { name = "duckdb" },
     { name = "faker" },
@@ -1165,6 +1166,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dbt-core", specifier = ">=1.11.9" },
     { name = "dbt-duckdb", specifier = ">=1.10.1" },
     { name = "duckdb", specifier = ">=1.5.2" },
     { name = "faker", specifier = ">=40.15.0" },

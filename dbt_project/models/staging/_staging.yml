@@ -1,0 +1,52 @@
+version: 2
+
+sources:
+  - name: raw
+    database: warehouse
+    schema: raw
+    tables:
+      - name: raw_orders
+        description: "Raw orders from Kaggle Superstore and synthetic generator"
+        columns:
+          - name: order_id
+            description: "Unique order identifier"
+          - name: order_date
+            description: "Date order was placed"
+          - name: customer_id
+            description: "Customer identifier"
+          - name: product_id
+            description: "Product identifier"
+          - name: sales
+            description: "Order line sales amount"
+          - name: profit
+            description: "Order line profit"
+
+models:
+  - name: stg_orders
+    description: "Cleaned and typed orders from raw source"
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+      - name: order_date
+        tests:
+          - not_null
+      - name: sales_amount
+        tests:
+          - not_null
+
+  - name: stg_products
+    description: "Distinct products with clean category hierarchy"
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_customers
+    description: "Distinct customers with segment"
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
