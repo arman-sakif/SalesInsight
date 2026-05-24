@@ -2,7 +2,7 @@ with date_spine as (
     select
         unnest(
             generate_series(
-                '2016-01-01'::date,
+                '2014-01-01'::date,
                 current_date,
                 interval '1 day'
             )
