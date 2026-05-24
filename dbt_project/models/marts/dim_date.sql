@@ -23,7 +23,8 @@ enriched as (
         case when dayofweek(date_day) in (0, 6)
             then true else false
         end                                                 as is_weekend,
-        strftime(date_day, '%Y-%m')                         as year_month
+        strftime(date_day, '%Y-%m')                         as year_month,
+        year*100 + month                                    as year_month_sort
     from date_spine
 )
 
