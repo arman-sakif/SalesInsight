@@ -4,3 +4,5 @@ data/warehouse.db
 __pycache__
 .pytest_cache
 data/warehouse_pbi.db
+data/parquet/
+data/warehouse_pbi.db

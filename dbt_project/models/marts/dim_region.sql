@@ -4,14 +4,13 @@ with orders as (
 
 regions as (
     select
-        state,
         region,
         country,
-        max(city)         as city,
-        max(postal_code)  as postal_code
+        count(distinct state)   as state_count,
+        count(distinct city)    as city_count
     from orders
-    where state is not null
-    group by state, region, country
+    where region is not null
+    group by region, country
 )
 
 select * from regions

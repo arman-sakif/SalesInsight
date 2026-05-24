@@ -42,8 +42,9 @@ models:
           - unique
 
   - name: dim_region
-    description: "One row per state with region mapping."
+    description: "One row per region with state and city counts."
     columns:
-      - name: state
+      - name: region
         tests:
           - not_null
+          - unique
