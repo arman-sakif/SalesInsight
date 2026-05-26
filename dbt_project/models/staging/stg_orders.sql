@@ -26,9 +26,24 @@ cleaned as (
         cast(postal_code as varchar)               as postal_code,
         cast(region as varchar)                    as region,
         cast(product_id as varchar)                as product_id,
-        cast(product_name as varchar)              as product_name,
-        cast(category as varchar)                  as category,
-        cast(sub_category as varchar)              as sub_category,
+        case
+            when cast(category as varchar)
+                not in ('Furniture', 'Office Supplies', 'Technology')
+            then cast(category as varchar)
+            else cast(product_name as varchar)
+        end                                        as product_name,
+        case
+            when cast(category as varchar)
+                not in ('Furniture', 'Office Supplies', 'Technology')
+            then cast(sub_category as varchar)
+            else cast(category as varchar)
+        end                                        as category,
+        case
+            when cast(category as varchar)
+                not in ('Furniture', 'Office Supplies', 'Technology')
+            then cast(product_name as varchar)
+            else cast(sub_category as varchar)
+        end                                        as sub_category,
         cast(sales as decimal(10, 2))              as sales_amount,
         cast(quantity as integer)                  as quantity,
         cast(discount as decimal(5, 2))            as discount,
