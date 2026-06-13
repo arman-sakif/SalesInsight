@@ -90,7 +90,7 @@ def generate_orders(ref: dict, n_orders: int, target_date: date) -> pd.DataFrame
         quantity = max(1, int(np.random.poisson(avg_qty)))
         sales    = max(1.0, round(np.random.normal(avg_sales, std_sales), 2))
         discount = round(min(max(np.random.normal(avg_discount, 0.05), 0), 0.5), 2)
-        profit   = round(sales * np.random.uniform(0.05, 0.35), 2)
+        profit = round(sales * (np.random.uniform(0.05, 0.35) - discount), 2)
 
         region = random.choices(REGIONS, REGION_WEIGHTS)[0]
         state  = random.choice(REGION_STATES[region])
