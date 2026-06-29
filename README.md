@@ -1,6 +1,6 @@
 # SalesInsight — AI-Powered Sales Intelligence Platform
 
-> **Status: In Progress** — Data pipeline and semantic model complete. Power BI dashboard, MCP server, and web app coming soon.
+> **Status: In Progress** — Data pipeline, semantic model, and Power BI dashboard complete. MCP server and web app coming soon.
 
 A portfolio project demonstrating end-to-end data engineering, semantic modelling, and AI integration skills. Built entirely with free and open-source tools.
 
@@ -15,7 +15,7 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 | dbt transformation pipeline | ✅ Complete | dbt Core, dbt-duckdb |
 | Star schema (marts layer) | ✅ Complete | DuckDB |
 | Power BI semantic model | ✅ Complete | Power BI Desktop |
-| Power BI dashboard | 🔄 In Progress | Power BI Desktop |
+| Power BI dashboard | ✅ Complete | Power BI Desktop |
 | MCP server | 🔜 Coming soon | Python, Anthropic MCP SDK |
 | Streamlit web app | 🔜 Coming soon | Streamlit |
 | GitHub Actions CI/CD | 🔜 Coming soon | GitHub Actions |
@@ -106,7 +106,23 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
 
 ### Dashboard Preview
 
+The semantic model powers a four-page Power BI report. Each page targets a different analytical question while sharing the same star schema and DAX measures.
+
+**Executive Summary** — Headline KPIs (total revenue, total profit, gross profit margin, total orders), a rolling 52-week revenue and profit-margin trend, revenue split by customer segment, and a top-customers table.
+
 ![Executive Summary](docs/screenshots/executive_summary.png)
+
+**Regional Sales Summary** — Shipping performance by region, revenue mapped by state, a region → category → sub-category revenue breakdown, and revenue ranked by region.
+
+![Regional Sales Summary](docs/screenshots/regional_summary.png)
+
+**Product Intelligence** — Revenue vs. profit by order size, a profit-margin vs. revenue scatter by sub-category, revenue by category, revenue by sub-category, and a product performance table.
+
+![Product Intelligence](docs/screenshots/product_intelligence.png)
+
+**Customer Analytics** — Revenue vs. profit by order size, a business-segment vs. RFM-segment matrix, customer distribution by RFM segment, a frequency-vs-spend value map, and a top-customers table with recency.
+
+![Customer Analytics](docs/screenshots/customer_analytics.png)
 
 ---
 
