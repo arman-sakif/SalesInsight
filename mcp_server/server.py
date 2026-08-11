@@ -65,8 +65,19 @@ def get_product_performance(category: str | None = None, n: int = 10) -> list[di
 
 @mcp.tool()
 def get_category_breakdown() -> list[dict]:
-    """Get revenue and profit margin broken down by category and sub-category."""
+    """Get revenue and profit margin broken down by category and sub-category,
+    including the average discount applied in each.
+    """
     return products.get_category_breakdown()
+
+
+@mcp.tool()
+def get_discount_impact() -> list[dict]:
+    """Get the discount-vs-margin analysis: order lines grouped into discount
+    bands (0%, 1-10%, 11-20%, 21-30%, 30%+) with revenue, average profit margin,
+    and total profit per band. Use this to answer how discounting affects margin.
+    """
+    return products.get_discount_impact()
 
 
 if __name__ == "__main__":

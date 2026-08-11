@@ -6,3 +6,5 @@ __pycache__
 data/warehouse_pbi.db
 data/parquet/
 data/warehouse_pbi.db
+CLAUDE.md
+context/

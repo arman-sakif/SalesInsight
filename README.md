@@ -16,7 +16,7 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 | Star schema (marts layer) | ✅ Complete | DuckDB |
 | Power BI semantic model | ✅ Complete | Power BI Desktop |
 | Power BI dashboard (4 pages) | ✅ Complete | Power BI Desktop |
-| MCP server (7 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
+| MCP server (8 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
 | Streamlit web app | 🔜 Coming soon | Streamlit |
 | GitHub Actions CI/CD | 🔜 Coming soon | GitHub Actions |
 
@@ -61,7 +61,7 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
            ┌────────────┴────────────┐
            ▼                         ▼
    Power BI Semantic Model     MCP Server (Python)
-   ├── 16 DAX measures         ├── 7 AI-queryable tools
+   ├── 16 DAX measures         ├── 8 AI-queryable tools
    └── 4 report pages          └── Connected to Claude Desktop
 ```
 
@@ -144,7 +144,8 @@ A Model Context Protocol server that exposes the sales warehouse as AI-queryable
 | `get_rfm_segments` | Customer distribution across RFM segments |
 | `revenue_by_region` | Revenue, profit, and margin by region |
 | `get_product_performance` | Top products, optionally filtered by category |
-| `get_category_breakdown` | Revenue and margin by category and sub-category |
+| `get_category_breakdown` | Revenue, margin, and average discount by category and sub-category |
+| `get_discount_impact` | Discount-vs-margin analysis: revenue, margin, and profit by discount band |
 
 ### Example
 
