@@ -2,6 +2,10 @@
 
 > **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, MCP server, and Streamlit web app complete. CI/CD coming soon.
 
+### 🚀 [Live app → sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)
+
+Explore the interactive four-page dashboard in your browser — no install required.
+
 A portfolio project demonstrating end-to-end data engineering, semantic modelling, BI development, and AI integration. Built entirely with free and open-source tools.
 
 ---
@@ -161,6 +165,10 @@ Because the MCP tools query the exact tables dbt builds, the AI's answers stay c
 
 A recruiter-facing web app that turns the same semantic layer into an interactive, four-page dashboard — no Power BI Desktop required. Each page reuses the exact MCP tool functions, so the web figures match the Power BI report and the AI answers.
 
+**🚀 Live: [sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)** — deployed on Streamlit Community Cloud, serving the committed Parquet marts.
+
+Run it locally with:
+
 ```bash
 uv run streamlit run app/streamlit_app.py
 ```
@@ -256,4 +264,4 @@ Built as a portfolio project following completion of a Master of Applied Computi
 
 ---
 
-*Built by [Arman Sakif](https://github.com/arman-sakif)*
+*Author Info: [Arman Sakif](https://github.com/arman-sakif)*
