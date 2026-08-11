@@ -4,7 +4,12 @@ data/warehouse.db
 __pycache__
 .pytest_cache
 data/warehouse_pbi.db
-data/parquet/
-data/warehouse_pbi.db
 CLAUDE.md
 context/
+
+# The Parquet marts are committed so the deployed Streamlit app has data
+# (it can't rebuild the gitignored DuckDB warehouse on Streamlit Cloud).
+# warehouse.db stays ignored above; these snapshots ship with the repo.
+!data/parquet/
+data/parquet/*
+!data/parquet/*.parquet

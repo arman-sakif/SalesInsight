@@ -1,0 +1,7 @@
+# Runtime dependencies for the deployed Streamlit app (Streamlit Community
+# Cloud installs these with pip). The app imports the `mcp_server` package
+# from source and reads the committed Parquet marts, so it only needs these
+# three — not the full dbt/ingestion toolchain in pyproject.toml.
+streamlit==1.61.1
+duckdb==1.5.2
+pandas==3.0.2

@@ -6,10 +6,19 @@ and Power BI all read from the one dbt-built semantic layer in DuckDB.
 The thin ``st.cache_data`` wrappers below just avoid re-opening the
 read-only DuckDB connection on every widget interaction.
 """
+import sys
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+# Ensure the repo root is importable so ``mcp_server`` resolves even when the
+# app is launched from a context that doesn't put the root on sys.path
+# (e.g. Streamlit Community Cloud).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from mcp_server.tools.customers import get_rfm_segments, get_top_customers
 from mcp_server.tools.metrics import METRIC_DEFINITIONS, explain_metric, query_metric

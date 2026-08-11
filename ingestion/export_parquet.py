@@ -25,7 +25,7 @@ def export():
             (FORMAT PARQUET)
         """)
         count = conn.execute(f"SELECT COUNT(*) FROM main.{table}").fetchone()[0]
-        print(f"Exported {table} → {out_path.name} ({count:,} rows)")
+        print(f"Exported {table} -> {out_path.name} ({count:,} rows)")
 
     conn.close()
     print("Done.")
