@@ -1,6 +1,6 @@
 # SalesInsight — AI-Powered Sales Intelligence Platform
 
-> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, and MCP server complete. Web app and CI/CD coming soon.
+> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, MCP server, and Streamlit web app complete. CI/CD coming soon.
 
 A portfolio project demonstrating end-to-end data engineering, semantic modelling, BI development, and AI integration. Built entirely with free and open-source tools.
 
@@ -17,7 +17,7 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 | Power BI semantic model | ✅ Complete | Power BI Desktop |
 | Power BI dashboard (4 pages) | ✅ Complete | Power BI Desktop |
 | MCP server (8 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
-| Streamlit web app | 🔜 Coming soon | Streamlit |
+| Streamlit web app (4 pages) | ✅ Complete | Streamlit |
 | GitHub Actions CI/CD | 🔜 Coming soon | GitHub Actions |
 
 ---
@@ -153,7 +153,33 @@ A Model Context Protocol server that exposes the sales warehouse as AI-queryable
 >
 > **Claude:** *(calls `query_metric` twice)* Your total revenue is $2.34M with a gross profit margin of 13.3%.
 
-Because the MCP tools query the exact tables dbt builds, the AI's answers stay consistent with the dashboard — one semantic layer, two interfaces.
+Because the MCP tools query the exact tables dbt builds, the AI's answers stay consistent with the dashboard — one semantic layer, many interfaces.
+
+---
+
+## Web App (Streamlit)
+
+A recruiter-facing web app that turns the same semantic layer into an interactive, four-page dashboard — no Power BI Desktop required. Each page reuses the exact MCP tool functions, so the web figures match the Power BI report and the AI answers.
+
+```bash
+uv run streamlit run app/streamlit_app.py
+```
+
+**Executive Overview** — Headline KPIs (revenue, profit, margin, orders, AOV, customers), revenue by region, and an expandable metric glossary backed by `explain_metric`.
+
+![Streamlit — Executive Overview](docs/screenshots/streamlit_home.png)
+
+**Customer Intelligence** — Top-N customers by revenue with their RFM segment, plus the RFM segment distribution.
+
+![Streamlit — Customer Intelligence](docs/screenshots/streamlit_customer_intelligence.png)
+
+**Regional Performance** — Revenue, profit, and margin by region with summary tiles and comparative charts.
+
+![Streamlit — Regional Performance](docs/screenshots/streamlit_regional_performance.png)
+
+**Product Intelligence** — Top products by category, category/sub-category margins, and a discount-vs-margin analysis showing how margin erodes as discounts deepen.
+
+![Streamlit — Product Intelligence](docs/screenshots/streamlit_Product_Intelligence.png)
 
 ---
 
@@ -187,6 +213,9 @@ uv run python ingestion/export_parquet.py
 
 # Test the MCP server in the MCP Inspector
 uv run mcp dev mcp_server/server.py
+
+# Launch the Streamlit web app
+uv run streamlit run app/streamlit_app.py
 ```
 
 ### Connecting the MCP Server to Claude Desktop
