@@ -10,13 +10,21 @@ dependencies = [
     "duckdb>=1.5.2",
     "faker>=40.15.0",
     "kagglehub>=1.0.1",
+    "mcp[cli]==1.14.0",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
     "python-dotenv>=1.2.2",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_server", "ingestion"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.12",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

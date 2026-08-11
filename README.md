@@ -1,8 +1,8 @@
 # SalesInsight — AI-Powered Sales Intelligence Platform
 
-> **Status: In Progress** — Data pipeline, semantic model, and Power BI dashboard complete. MCP server and web app coming soon.
+> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, and MCP server complete. Web app and CI/CD coming soon.
 
-A portfolio project demonstrating end-to-end data engineering, semantic modelling, and AI integration skills. Built entirely with free and open-source tools.
+A portfolio project demonstrating end-to-end data engineering, semantic modelling, BI development, and AI integration. Built entirely with free and open-source tools.
 
 ---
 
@@ -15,8 +15,8 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 | dbt transformation pipeline | ✅ Complete | dbt Core, dbt-duckdb |
 | Star schema (marts layer) | ✅ Complete | DuckDB |
 | Power BI semantic model | ✅ Complete | Power BI Desktop |
-| Power BI dashboard | ✅ Complete | Power BI Desktop |
-| MCP server | 🔜 Coming soon | Python, Anthropic MCP SDK |
+| Power BI dashboard (4 pages) | ✅ Complete | Power BI Desktop |
+| MCP server (7 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
 | Streamlit web app | 🔜 Coming soon | Streamlit |
 | GitHub Actions CI/CD | 🔜 Coming soon | GitHub Actions |
 
@@ -27,13 +27,15 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 - **Warehouse:** DuckDB (local, file-based)
 - **Transformations:** dbt Core with dbt-duckdb adapter
 - **Dashboard:** Power BI Desktop
+- **AI Integration:** Model Context Protocol (MCP) server, connected to Claude Desktop
 - **Package management:** uv
 - **Language:** Python 3.12
 
 ---
 
-## Data Pipeline Architecture
+## Architecture
 
+```
 Kaggle Superstore (historical)     Synthetic Generator (daily)
          │                                    │
          └──────────────┬────────────────────┘
@@ -56,9 +58,12 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
                  ├── dim_date
                  └── dim_region
                         │
-                        ▼
-             Power BI Semantic Model
-             └── 16 DAX measures
+           ┌────────────┴────────────┐
+           ▼                         ▼
+   Power BI Semantic Model     MCP Server (Python)
+   ├── 16 DAX measures         ├── 7 AI-queryable tools
+   └── 4 report pages          └── Connected to Claude Desktop
+```
 
 ---
 
@@ -67,7 +72,7 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
 - **Source:** [Kaggle Sample Superstore](https://www.kaggle.com/datasets/konstantinognev/sample-superstorecsv)
 - **Historical rows:** 9,994 real orders (2014–2017)
 - **Synthetic rows:** Generated daily using statistical distributions from real data
-- **Total rows:** 10,000+
+- **Data quality:** Staging layer corrects column-rotation issues in the source data with no data loss
 
 ---
 
@@ -76,9 +81,9 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
 ### Staging
 | Model | Description |
 |---|---|
-| `stg_orders` | Cleaned and typed orders with date parsing and synthetic flag |
+| `stg_orders` | Cleaned and typed orders with date parsing, category correction, and synthetic flag |
 | `stg_customers` | Distinct customers with segment |
-| `stg_products` | Distinct products deduplicated by product ID |
+| `stg_products` | Distinct products, deduplicated and category-corrected |
 
 ### Intermediate
 | Model | Description |
@@ -126,6 +131,31 @@ The semantic model powers a four-page Power BI report. Each page targets a diffe
 
 ---
 
+## MCP Server
+
+A Model Context Protocol server that exposes the sales warehouse as AI-queryable tools. Connected to Claude Desktop, it lets you ask natural-language questions and get real answers from the live DuckDB warehouse — the same semantic layer the Power BI dashboard visualizes.
+
+### Available Tools
+| Tool | Description |
+|---|---|
+| `query_metric` | Query a core metric (revenue, profit, margin, orders, AOV, units, customers) |
+| `explain_metric` | Explain what a metric means and how it's calculated |
+| `get_top_customers` | Top N customers by revenue with RFM segment |
+| `get_rfm_segments` | Customer distribution across RFM segments |
+| `revenue_by_region` | Revenue, profit, and margin by region |
+| `get_product_performance` | Top products, optionally filtered by category |
+| `get_category_breakdown` | Revenue and margin by category and sub-category |
+
+### Example
+
+> **You:** What's my total revenue and gross profit margin?
+>
+> **Claude:** *(calls `query_metric` twice)* Your total revenue is $2.34M with a gross profit margin of 13.3%.
+
+Because the MCP tools query the exact tables dbt builds, the AI's answers stay consistent with the dashboard — one semantic layer, two interfaces.
+
+---
+
 ## How to Run Locally
 
 **Prerequisites:** Python 3.12+, uv, git
@@ -153,6 +183,31 @@ cd ..
 
 # Export to Parquet for Power BI
 uv run python ingestion/export_parquet.py
+
+# Test the MCP server in the MCP Inspector
+uv run mcp dev mcp_server/server.py
+```
+
+### Connecting the MCP Server to Claude Desktop
+
+Add the following to your `claude_desktop_config.json` (adjust the paths to match your machine), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "salesinsight": {
+      "command": "C:\\Users\\<you>\\.local\\bin\\uv.exe",
+      "args": [
+        "--directory",
+        "C:\\path\\to\\SalesInsight",
+        "run",
+        "python",
+        "-m",
+        "mcp_server.server"
+      ]
+    }
+  }
+}
 ```
 
 ---
@@ -165,7 +220,6 @@ Built as a portfolio project following completion of a Master of Applied Computi
 
 ## Coming Soon
 
-- MCP server exposing business metrics as AI-queryable tools
 - Streamlit web app with embedded dashboard and AI chat interface
 - GitHub Actions CI/CD with daily automated data refresh
 - Public dashboard via Power BI Service or alternative
