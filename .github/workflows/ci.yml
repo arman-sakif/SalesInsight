@@ -1,0 +1,54 @@
+name: CI
+
+# Runs the whole pipeline on every change: lint, rebuild the warehouse from the
+# committed CSV, run the dbt models and data tests, then smoke-test the MCP
+# tool layer that both Claude Desktop and the Streamlit app call.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Lint, build, test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      # No Kaggle credentials in CI: --local loads the CSV snapshot committed
+      # at data/raw/superstore.csv instead of re-downloading the dataset.
+      - name: Load the raw layer from the committed CSV
+        run: uv run python ingestion/kaggle_loader.py --local
+
+      # --retain-days is a no-op here (the run starts from a fresh warehouse),
+      # but it keeps the retention policy visible and exercised in CI.
+      - name: Append a week of synthetic orders
+        run: uv run python ingestion/synthetic_generator.py --days 7 --retain-days 365
+
+      - name: Build dbt models and run data tests
+        working-directory: dbt_project
+        run: uv run dbt build
+
+      - name: Export the Parquet marts
+        run: uv run python ingestion/export_parquet.py
+
+      - name: Smoke-test the MCP tools
+        run: uv run pytest -q

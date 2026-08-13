@@ -1,3 +1,4 @@
+import argparse
 import duckdb
 import pandas as pd
 import numpy as np
@@ -13,6 +14,11 @@ np.random.seed(42)
 
 ROOT_DIR = Path(__file__).parent.parent
 DB_PATH = ROOT_DIR / "data" / "warehouse.db"
+
+# Retention: how many days of generated history to keep (one year). Applies to
+# synthetic rows only -- the Kaggle baseline (2014-2017) is the historical demo
+# data and is never pruned, however old it gets.
+RETAIN_DAYS = 365
 
 SHIP_MODES = ["Second Class", "Standard Class", "First Class", "Same Day"]
 SHIP_MODE_WEIGHTS = [0.30, 0.50, 0.15, 0.05]
@@ -147,9 +153,17 @@ def migrate_schema(conn) -> None:
 
 
 def append_to_duckdb(df: pd.DataFrame, conn) -> None:
-    """Append synthetic orders to raw.raw_orders."""
+    """Append synthetic orders to raw.raw_orders.
+
+    BY NAME matters: the source CSV orders its columns
+    category, sub_category, product_name while the frame built above orders
+    them product_name, category, sub_category. A positional insert silently
+    rotated those three values, and because load_reference_data() reads
+    products back out of raw.raw_orders, each extra day of generation rotated
+    them again until the category column held product names.
+    """
     migrate_schema(conn)
-    conn.execute("INSERT INTO raw.raw_orders SELECT * FROM df")
+    conn.execute("INSERT INTO raw.raw_orders BY NAME SELECT * FROM df")
     print(f"Inserted {len(df):,} synthetic rows")
 
 
@@ -176,5 +190,73 @@ def run(days_back: int = 0, n_orders: int = None):
     print("Done.")
 
 
+def prune_synthetic(conn, retain_days: int = RETAIN_DAYS) -> int:
+    """Delete synthetic orders older than `retain_days` days. Returns the count.
+
+    Scoped to row_id LIKE 'SYN-%' so the Kaggle rows survive: they are the
+    historical baseline the year-over-year views and RFM recency spread depend
+    on, and a blanket cutoff would take all 9,994 of them.
+
+    The string comparison on order_date is a valid date comparison *because* of
+    that scoping -- synthetic rows always write ISO dates, while the Kaggle rows
+    are stored as M/D/YYYY and would not compare correctly.
+    """
+    cutoff = (date.today() - timedelta(days=retain_days)).strftime("%Y-%m-%d")
+    deleted = conn.execute(
+        "DELETE FROM raw.raw_orders WHERE row_id LIKE 'SYN-%' AND order_date < ?",
+        [cutoff],
+    ).fetchone()[0]
+    print(f"Retention: deleted {deleted:,} synthetic rows dated before {cutoff}")
+    return deleted
+
+
+def run_window(days: int, n_orders: int = None):
+    """Generate orders for the last `days` days, oldest first (today included).
+
+    The CI refresh workflow rebuilds the warehouse from scratch each run, so it
+    regenerates a rolling window rather than appending a single day.
+    """
+    for days_back in range(days - 1, -1, -1):
+        run(days_back=days_back, n_orders=n_orders)
+
+
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Append synthetic daily orders to raw.raw_orders.")
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=1,
+        help="Number of days to generate, counting back from today "
+             "(default: 1, i.e. today only; 0 applies retention without generating).",
+    )
+    parser.add_argument(
+        "--orders",
+        type=int,
+        default=None,
+        help="Orders per day (default: a random realistic volume between 50 and 150).",
+    )
+    parser.add_argument(
+        "--retain-days",
+        type=int,
+        default=RETAIN_DAYS,
+        help=f"Days of synthetic history to keep (default: {RETAIN_DAYS}). "
+             "Kaggle rows are never pruned.",
+    )
+    parser.add_argument(
+        "--no-prune",
+        action="store_true",
+        help="Generate without applying the retention policy.",
+    )
+    args = parser.parse_args()
+
+    if args.days < 0:
+        parser.error("--days cannot be negative")
+
+    run_window(args.days, args.orders)
+
+    if not args.no_prune:
+        conn = duckdb.connect(str(DB_PATH))
+        prune_synthetic(conn, args.retain_days)
+        total = conn.execute("SELECT COUNT(*) FROM raw.raw_orders").fetchone()[0]
+        print(f"Total rows in raw.raw_orders: {total:,}")
+        conn.close()

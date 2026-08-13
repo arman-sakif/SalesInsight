@@ -1,6 +1,9 @@
 # SalesInsight — AI-Powered Sales Intelligence Platform
 
-> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, MCP server, and Streamlit web app complete. CI/CD coming soon.
+[![CI](https://github.com/arman-sakif/SalesInsight/actions/workflows/ci.yml/badge.svg)](https://github.com/arman-sakif/SalesInsight/actions/workflows/ci.yml)
+[![Refresh data](https://github.com/arman-sakif/SalesInsight/actions/workflows/refresh-data.yml/badge.svg)](https://github.com/arman-sakif/SalesInsight/actions/workflows/refresh-data.yml)
+
+> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, MCP server, Streamlit web app, and CI/CD complete.
 
 ### 🚀 [Live app → sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)
 
@@ -22,7 +25,7 @@ A portfolio project demonstrating end-to-end data engineering, semantic modellin
 | Power BI dashboard (4 pages) | ✅ Complete | Power BI Desktop |
 | MCP server (8 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
 | Streamlit web app (4 pages) | ✅ Complete | Streamlit |
-| GitHub Actions CI/CD | 🔜 Coming soon | GitHub Actions |
+| GitHub Actions CI/CD | ✅ Complete | GitHub Actions, pytest, ruff |
 
 ---
 
@@ -191,6 +194,36 @@ uv run streamlit run app/streamlit_app.py
 
 ---
 
+## CI/CD (GitHub Actions)
+
+Two workflows in `.github/workflows/`:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (5 models + 23 data tests), exports the marts, and smoke-tests the MCP tools with pytest |
+| `refresh-data.yml` | weekly cron + manual dispatch | Same pipeline, then commits the refreshed `data/parquet/*.parquet` back to `master`, which triggers a Streamlit Community Cloud redeploy |
+
+Two details worth calling out:
+
+- **No Kaggle credentials in CI.** `kaggle_loader.py --local` loads the CSV snapshot committed at `data/raw/superstore.csv` instead of re-downloading the dataset, so the workflows need no secrets.
+- **The refresh regenerates rather than appends.** `warehouse.db` is gitignored, so each run starts from the raw CSV and generates a rolling window of synthetic orders through today (`synthetic_generator.py --days 7`). The hosted app therefore always shows data up to the last refresh.
+
+### Retention
+
+`synthetic_generator.py` applies a one-year retention policy after generating, so the warehouse keeps at most 365 days of generated history:
+
+```bash
+uv run python ingestion/synthetic_generator.py --days 7 --retain-days 365  # default
+uv run python ingestion/synthetic_generator.py --days 0                    # prune only, generate nothing
+uv run python ingestion/synthetic_generator.py --no-prune                  # generate without pruning
+```
+
+It deletes only rows with a `SYN-` prefix. The 2014–2017 Kaggle baseline is never pruned — it is the historical data the year-over-year views and RFM recency scores are built on, and a blanket cutoff would take all 9,994 rows of it.
+
+The refresh runs weekly rather than daily on purpose: each run rewrites roughly 500 KB of binary Parquet, and daily commits would add ~190 MB of history a year. Change the cron in `refresh-data.yml` to `"0 6 * * *"` for a daily refresh.
+
+---
+
 ## How to Run Locally
 
 **Prerequisites:** Python 3.12+, uv, git
@@ -224,7 +257,19 @@ uv run mcp dev mcp_server/server.py
 
 # Launch the Streamlit web app
 uv run streamlit run app/streamlit_app.py
+
+# Run the checks CI runs
+uv run ruff check .
+uv run pytest
 ```
+
+No Kaggle account? Skip the `.env` step and load the committed CSV snapshot instead:
+
+```bash
+uv run python ingestion/kaggle_loader.py --local
+```
+
+`synthetic_generator.py` appends one day of orders by default; pass `--days 7` to generate a week. It always appends to whatever is already in `raw.raw_orders`, so re-run `kaggle_loader.py --local` first if you want a clean rebuild rather than more history. It also prunes generated history older than a year on each run — see [Retention](#retention).
 
 ### Connecting the MCP Server to Claude Desktop
 
@@ -258,9 +303,8 @@ Built as a portfolio project following completion of a Master of Applied Computi
 
 ## Coming Soon
 
-- Streamlit web app with embedded dashboard and AI chat interface
-- GitHub Actions CI/CD with daily automated data refresh
-- Public dashboard via Power BI Service or alternative
+- Bonus AI tools: natural-language-to-SQL, anomaly detection, executive summary generation, dbt lineage explainer
+- Discount-vs-margin visual on the Power BI Product Intelligence page (the data and MCP tool are already in place)
 
 ---
 
