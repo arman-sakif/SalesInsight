@@ -1,0 +1,78 @@
+name: Refresh data
+
+# The deployed Streamlit app reads the Parquet marts committed to this repo,
+# so it only ever shows the snapshot in master. This workflow rebuilds the
+# warehouse, regenerates a rolling window of synthetic orders through today,
+# and commits the refreshed marts — which makes Streamlit Community Cloud
+# redeploy with fresh data.
+#
+# Weekly rather than daily on purpose: each refresh rewrites ~500 KB of binary
+# Parquet, and a daily commit would add ~190 MB of history a year to a repo
+# that is otherwise 3 MB. Change the cron below to "0 6 * * *" for daily.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Days of synthetic orders to generate, counting back from today"
+        default: "7"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Rebuild marts and commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # The runner has no warehouse.db (it is gitignored), so the raw layer is
+      # rebuilt from the committed CSV and the synthetic window is regenerated
+      # from scratch rather than appended to the previous run's output.
+      - name: Load the raw layer from the committed CSV
+        run: uv run python ingestion/kaggle_loader.py --local
+
+      # Retention keeps one year of generated history. It is a no-op while the
+      # warehouse is rebuilt from scratch each run, and becomes load-bearing if
+      # the warehouse is ever persisted between runs.
+      - name: Generate synthetic orders through today
+        run: uv run python ingestion/synthetic_generator.py --days ${{ github.event.inputs.days || '7' }} --retain-days 365
+
+      - name: Build dbt models and run data tests
+        working-directory: dbt_project
+        run: uv run dbt build
+
+      - name: Export the Parquet marts
+        run: uv run python ingestion/export_parquet.py
+
+      # Guard against publishing marts the tools can no longer read.
+      - name: Smoke-test the MCP tools
+        run: uv run pytest -q
+
+      - name: Commit the refreshed marts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/parquet
+          if git diff --staged --quiet; then
+            echo "Parquet marts unchanged; nothing to commit."
+          else
+            git commit -m "chore(data): refresh Parquet marts ($(date -u +%Y-%m-%d))"
+            git push
+          fi

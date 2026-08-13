@@ -1,4 +1,4 @@
-import os
+import argparse
 import shutil
 import duckdb
 import kagglehub
@@ -25,8 +25,22 @@ def download_dataset() -> Path:
     print(f"Saved to {dest}")
     return dest
 
+def local_dataset() -> Path:
+    """Return the committed CSV, skipping the Kaggle download.
+
+    CI has no Kaggle credentials, so the workflows rebuild the raw layer from
+    the snapshot committed at data/raw/superstore.csv.
+    """
+    dest = RAW_DIR / "superstore.csv"
+    if not dest.exists():
+        raise FileNotFoundError(
+            f"No local CSV at {dest}. Run without --local to download it from Kaggle."
+        )
+    print(f"Using local CSV at {dest}")
+    return dest
+
 def load_to_duckdb(csv_path: Path) -> None:
-    print(f"Loading into DuckDB...")
+    print("Loading into DuckDB...")
     df = pd.read_csv(csv_path, encoding="latin-1")
     df.columns = (
         df.columns
@@ -46,6 +60,14 @@ def load_to_duckdb(csv_path: Path) -> None:
     conn.close()
 
 if __name__ == "__main__":
-    csv_path = download_dataset()
+    parser = argparse.ArgumentParser(description="Load the Superstore CSV into DuckDB raw schema.")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use the committed data/raw/superstore.csv instead of downloading from Kaggle.",
+    )
+    args = parser.parse_args()
+
+    csv_path = local_dataset() if args.local else download_dataset()
     load_to_duckdb(csv_path)
     print("Done.")

@@ -1,0 +1,13 @@
+# Portable dbt profile, committed so a fresh clone (and CI) can build without
+# a machine-specific ~/.dbt/profiles.yml. dbt reads profiles.yml from the
+# project directory before falling back to ~/.dbt, and dbt always runs from
+# inside dbt_project/, so the relative default below resolves to the same
+# data/warehouse.db used locally. Override with SALESINSIGHT_DB_PATH if the
+# warehouse lives elsewhere.
+dbt_project:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('SALESINSIGHT_DB_PATH', '../data/warehouse.db') }}"
+      threads: 4
