@@ -28,37 +28,7 @@ An end-to-end analytics platform: a dbt-modelled warehouse feeding a Power BI re
 
 ## Architecture
 
-```
-Kaggle Superstore (historical)     Synthetic Generator (rolling window)
-         │                                    │
-         └──────────────┬────────────────────┘
-                        │
-                        ▼
-             Ingestion Layer (Python)
-                        │
-                        ▼
-             DuckDB — Raw Schema
-                        │
-                        ▼
-             dbt Core Transformations
-             ├── Staging layer (views)
-             ├── Intermediate layer (views)
-             │   └── RFM customer segmentation
-             └── Marts layer (tables)
-                 ├── fact_sales
-                 ├── dim_customer
-                 ├── dim_product
-                 ├── dim_date
-                 └── dim_region
-                        │
-        ┌───────────────┼───────────────┐
-        ▼               ▼               ▼
-  Power BI        MCP Server      Streamlit App
-  16 DAX measures  8 AI tools      4 pages
-  4 report pages   Claude Desktop  Streamlit Cloud
-```
-
-All three consumers sit on the same marts. The Streamlit app goes one step further and imports the MCP server's own query functions, so a metric is defined exactly once in Python and SQL.
+![SalesInsight architecture](docs/architecture.png)
 
 ---
 
