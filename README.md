@@ -3,47 +3,33 @@
 [![CI](https://github.com/arman-sakif/SalesInsight/actions/workflows/ci.yml/badge.svg)](https://github.com/arman-sakif/SalesInsight/actions/workflows/ci.yml)
 [![Refresh data](https://github.com/arman-sakif/SalesInsight/actions/workflows/refresh-data.yml/badge.svg)](https://github.com/arman-sakif/SalesInsight/actions/workflows/refresh-data.yml)
 
-> **Status: In Progress** — Data pipeline, semantic model, Power BI dashboard, MCP server, Streamlit web app, and CI/CD complete.
-
 ### 🚀 [Live app → sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)
 
-Explore the interactive four-page dashboard in your browser — no install required.
+An end-to-end analytics platform: a dbt-modelled warehouse feeding a Power BI report, an MCP server that lets an AI assistant query the same numbers, and a deployed web app — with CI/CD that rebuilds and republishes the whole thing on a schedule. Built entirely with free and open-source tools.
 
-A portfolio project demonstrating end-to-end data engineering, semantic modelling, BI development, and AI integration. Built entirely with free and open-source tools.
-
----
-
-## What's Built So Far
-
-| Layer | Status | Tools |
-|---|---|---|
-| Data ingestion pipeline | ✅ Complete | Python, kagglehub, DuckDB |
-| Synthetic data generator | ✅ Complete | Python, Faker, NumPy |
-| dbt transformation pipeline | ✅ Complete | dbt Core, dbt-duckdb |
-| Star schema (marts layer) | ✅ Complete | DuckDB |
-| Power BI semantic model | ✅ Complete | Power BI Desktop |
-| Power BI dashboard (4 pages) | ✅ Complete | Power BI Desktop |
-| MCP server (8 AI tools) | ✅ Complete | Python, Anthropic MCP SDK |
-| Streamlit web app (4 pages) | ✅ Complete | Streamlit |
-| GitHub Actions CI/CD | ✅ Complete | GitHub Actions, pytest, ruff |
+**The design principle behind it:** every consumer reads from one dbt-built semantic layer. The Power BI report, the AI tools, and the web app all resolve a metric like *gross profit margin* through the same SQL definition, so the three surfaces cannot disagree with each other.
 
 ---
 
-## Tech Stack
+## What this project demonstrates
 
-- **Warehouse:** DuckDB (local, file-based)
-- **Transformations:** dbt Core with dbt-duckdb adapter
-- **Dashboard:** Power BI Desktop
-- **AI Integration:** Model Context Protocol (MCP) server, connected to Claude Desktop
-- **Package management:** uv
-- **Language:** Python 3.12
+| Area | What was built |
+|---|---|
+| **Data engineering** | Ingestion pipeline from a Kaggle source plus a statistical synthetic-order generator, landing in DuckDB |
+| **Analytics engineering (dbt)** | 10 models across a staging → intermediate → marts architecture, 23 data tests, star schema, RFM segmentation in SQL |
+| **Data quality** | A column-rotation defect in the source data corrected in staging with zero row loss |
+| **BI development** | Power BI semantic model — star schema, 16 DAX measures, time intelligence, 4 report pages |
+| **AI integration** | An MCP server exposing 8 tools over the warehouse, connected to Claude Desktop |
+| **Web development** | A deployed 4-page Streamlit app reusing the MCP tool functions directly |
+| **DevOps** | Two GitHub Actions workflows — CI on every PR, plus a scheduled job that rebuilds the data and redeploys the live app |
+| **Testing & tooling** | ruff linting and 22 pytest tests in CI, alongside the 23 dbt data tests |
 
 ---
 
 ## Architecture
 
 ```
-Kaggle Superstore (historical)     Synthetic Generator (daily)
+Kaggle Superstore (historical)     Synthetic Generator (rolling window)
          │                                    │
          └──────────────┬────────────────────┘
                         │
@@ -65,12 +51,27 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
                  ├── dim_date
                  └── dim_region
                         │
-           ┌────────────┴────────────┐
-           ▼                         ▼
-   Power BI Semantic Model     MCP Server (Python)
-   ├── 16 DAX measures         ├── 8 AI-queryable tools
-   └── 4 report pages          └── Connected to Claude Desktop
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+  Power BI        MCP Server      Streamlit App
+  16 DAX measures  8 AI tools      4 pages
+  4 report pages   Claude Desktop  Streamlit Cloud
 ```
+
+All three consumers sit on the same marts. The Streamlit app goes one step further and imports the MCP server's own query functions, so a metric is defined exactly once in Python and SQL.
+
+---
+
+## Tech Stack
+
+- **Language:** Python 3.12
+- **Package management:** uv
+- **Warehouse:** DuckDB (local, file-based)
+- **Transformations:** dbt Core with the dbt-duckdb adapter
+- **Dashboard:** Power BI Desktop
+- **Web app:** Streamlit, deployed on Streamlit Community Cloud
+- **AI integration:** Model Context Protocol (MCP) server, connected to Claude Desktop
+- **CI/CD:** GitHub Actions, pytest, ruff
 
 ---
 
@@ -78,47 +79,66 @@ Kaggle Superstore (historical)     Synthetic Generator (daily)
 
 - **Source:** [Kaggle Sample Superstore](https://www.kaggle.com/datasets/konstantinognev/sample-superstorecsv)
 - **Historical rows:** 9,994 real orders (2014–2017)
-- **Synthetic rows:** Generated daily using statistical distributions from real data
-- **Data quality:** Staging layer corrects column-rotation issues in the source data with no data loss
+- **Synthetic rows:** a rolling window of recent orders generated from distributions fitted to the real data, so the dashboard has current activity to show
+- **Data quality:** the staging layer corrects a column-rotation defect in the source with no data loss
+
+Figures below marked **≈** are approximate: the synthetic window is regenerated on every scheduled refresh, so they move slightly week to week. The 9,994 historical rows are fixed.
+
+| Measure | Current |
+|---|---|
+| Fact table rows | ≈10,700 order lines |
+| Distinct orders | ≈5,700 |
+| Customers | ≈790 |
+| Products | ≈1,860 |
+| Total revenue | ≈$2.56M |
+| Gross profit margin | ≈11.8% |
 
 ---
 
-## dbt Models
+## dbt Modelling
 
-### Staging
+A three-layer architecture, each layer with a single responsibility.
+
+### Staging — clean and conform
 | Model | Description |
 |---|---|
-| `stg_orders` | Cleaned and typed orders with date parsing, category correction, and synthetic flag |
+| `stg_orders` | Cleaned and typed orders with date parsing, category correction, and a synthetic flag |
 | `stg_customers` | Distinct customers with segment |
 | `stg_products` | Distinct products, deduplicated and category-corrected |
 
-### Intermediate
+### Intermediate — business logic
 | Model | Description |
 |---|---|
-| `int_orders_enriched` | Orders joined with products, with derived metrics (profit margin, days to ship) |
-| `int_customer_segments` | RFM scored customers with segment labels (Champions, Loyal, At Risk, Lost) |
+| `int_orders_enriched` | Orders joined to products with derived metrics (profit margin, days to ship) |
+| `int_customer_segments` | RFM-scored customers labelled Champions, Loyal Customers, Potential Loyalists, At Risk, and Lost |
 
-### Marts
+### Marts — the star schema consumers read
 | Model | Description |
 |---|---|
-| `fact_sales` | One row per order line, central fact table |
+| `fact_sales` | One row per order line, the central fact table |
 | `dim_customer` | One row per customer with RFM segment |
 | `dim_product` | One row per product with category hierarchy |
 | `dim_date` | Date spine from 2014 to today with calendar attributes |
 | `dim_region` | One row per region (West, East, Central, South) |
 
+**Testing:** 23 dbt data tests — 16 not-null and 7 uniqueness constraints across the staging, intermediate, and marts layers. `dbt build` runs 33 nodes in total (10 models + 23 tests), and CI fails the build if any of them fail.
+
+**RFM segmentation** is implemented in SQL rather than as a Python post-process: `int_customer_segments` scores recency, frequency, and monetary value into quartiles with `ntile(4)` window functions and maps the combination to a segment label. Because it lives in the model layer, the segment reaches Power BI, the AI tools, and the web app identically.
+
 ---
 
 ## Power BI Semantic Model
 
-- 4 active relationships (star schema)
+- 4 active relationships forming a star schema
 - 16 DAX measures across revenue, profit, customers, time intelligence, and shipping
 - 5 calculated columns
 - Time intelligence: MTD, YTD, vs Prior Month, vs Prior Year
 
+Power BI imports the Parquet exports rather than connecting to DuckDB directly — see [Engineering decisions](#engineering-decisions) for why.
+
 ### Dashboard Preview
 
-The semantic model powers a four-page Power BI report. Each page targets a different analytical question while sharing the same star schema and DAX measures.
+Four pages, each targeting a different analytical question while sharing the same star schema and measures.
 
 **Executive Summary** — Headline KPIs (total revenue, total profit, gross profit margin, total orders), a rolling 52-week revenue and profit-margin trend, revenue split by customer segment, and a top-customers table.
 
@@ -140,7 +160,9 @@ The semantic model powers a four-page Power BI report. Each page targets a diffe
 
 ## MCP Server
 
-A Model Context Protocol server that exposes the sales warehouse as AI-queryable tools. Connected to Claude Desktop, it lets you ask natural-language questions and get real answers from the live DuckDB warehouse — the same semantic layer the Power BI dashboard visualizes.
+A Model Context Protocol server that exposes the warehouse as AI-queryable tools. Connected to Claude Desktop, it answers natural-language questions from the live DuckDB warehouse — the same semantic layer the Power BI report visualizes.
+
+The server opens DuckDB **read-only**, so an AI tool call can never write to the warehouse and never contends with dbt for the single-writer lock.
 
 ### Available Tools
 | Tool | Description |
@@ -158,19 +180,17 @@ A Model Context Protocol server that exposes the sales warehouse as AI-queryable
 
 > **You:** What's my total revenue and gross profit margin?
 >
-> **Claude:** *(calls `query_metric` twice)* Your total revenue is $2.34M with a gross profit margin of 13.3%.
+> **Claude:** *(calls `query_metric` twice)* Your total revenue is ≈$2.56M with a gross profit margin of ≈11.8%.
 
-Because the MCP tools query the exact tables dbt builds, the AI's answers stay consistent with the dashboard — one semantic layer, many interfaces.
+`explain_metric` is the tool worth noting: it returns the definition **and the SQL expression** behind a metric, so the assistant can show its working rather than asking you to trust a number.
 
 ---
 
 ## Web App (Streamlit)
 
-A recruiter-facing web app that turns the same semantic layer into an interactive, four-page dashboard — no Power BI Desktop required. Each page reuses the exact MCP tool functions, so the web figures match the Power BI report and the AI answers.
+A four-page dashboard in the browser — no Power BI Desktop required. Each page calls the exact MCP tool functions, so the web figures match the Power BI report and the AI answers by construction rather than by discipline.
 
-**🚀 Live: [sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)** — deployed on Streamlit Community Cloud, serving the committed Parquet marts.
-
-Run it locally with:
+**🚀 Live: [sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)**
 
 ```bash
 uv run streamlit run app/streamlit_app.py
@@ -196,17 +216,17 @@ uv run streamlit run app/streamlit_app.py
 
 ## CI/CD (GitHub Actions)
 
-Two workflows in `.github/workflows/`:
-
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (5 models + 23 data tests), exports the marts, and smoke-tests the MCP tools with pytest |
-| `refresh-data.yml` | weekly cron + manual dispatch | Same pipeline, then commits the refreshed `data/parquet/*.parquet` back to `master`, which triggers a Streamlit Community Cloud redeploy |
+| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (10 models + 23 data tests), exports the marts, and smoke-tests the MCP tools with 22 pytest tests |
+| `refresh-data.yml` | weekly cron + manual dispatch | Runs the same pipeline, then commits the refreshed `data/parquet/*.parquet` back to `master`, which triggers a Streamlit Community Cloud redeploy |
+
+The second workflow is the interesting one: it closes the loop from raw data to deployed dashboard with no human in it. A scheduled run rebuilds the warehouse, regenerates the recent-orders window, revalidates every dbt test, and publishes the result — so the live app keeps showing current data without anyone touching it.
 
 Two details worth calling out:
 
-- **No Kaggle credentials in CI.** `kaggle_loader.py --local` loads the CSV snapshot committed at `data/raw/superstore.csv` instead of re-downloading the dataset, so the workflows need no secrets.
-- **The refresh regenerates rather than appends.** `warehouse.db` is gitignored, so each run starts from the raw CSV and generates a rolling window of synthetic orders through today (`synthetic_generator.py --days 7`). The hosted app therefore always shows data up to the last refresh.
+- **No secrets in CI.** `kaggle_loader.py --local` loads the CSV snapshot committed at `data/raw/superstore.csv` instead of re-downloading the dataset, so both workflows run with zero configured credentials.
+- **The refresh regenerates rather than appends.** `warehouse.db` is gitignored, so each run starts from the raw CSV and generates a rolling window through today (`synthetic_generator.py --days 7`). This keeps the pipeline reproducible: the same commit always produces the same shape of warehouse.
 
 ### Retention
 
@@ -218,9 +238,23 @@ uv run python ingestion/synthetic_generator.py --days 0                    # pru
 uv run python ingestion/synthetic_generator.py --no-prune                  # generate without pruning
 ```
 
-It deletes only rows with a `SYN-` prefix. The 2014–2017 Kaggle baseline is never pruned — it is the historical data the year-over-year views and RFM recency scores are built on, and a blanket cutoff would take all 9,994 rows of it.
+It deletes only rows carrying a `SYN-` prefix. The 2014–2017 Kaggle baseline is never pruned — it is the historical data the year-over-year views and RFM recency scores are built on, and a blanket cutoff would take all 9,994 rows of it.
 
-The refresh runs weekly rather than daily on purpose: each run rewrites roughly 500 KB of binary Parquet, and daily commits would add ~190 MB of history a year. Change the cron in `refresh-data.yml` to `"0 6 * * *"` for a daily refresh.
+---
+
+## Engineering decisions
+
+The constraints that shaped the design, and how each was resolved.
+
+**Power BI cannot read DuckDB directly.** The ODBC driver fails because Power BI spawns parallel Mashup processes that collide on DuckDB's single-writer lock. Rather than switch warehouses, the pipeline exports each mart to Parquet and Power BI imports those — which also made the marts portable enough to deploy the web app later.
+
+**The web app has no warehouse to read.** Streamlit Community Cloud only has the committed repo, and `warehouse.db` is gitignored. The connection helper detects this and builds an in-memory DuckDB with the Parquet marts registered as views under the same schema name, so every query in the tool layer runs unchanged against either source. One code path, two environments.
+
+**A blanket retention policy would have destroyed the analysis.** "Delete everything older than a year" would have dropped all 9,994 historical rows and left only the synthetic window — collapsing the year-over-year comparisons and flattening RFM recency to a few days. Retention is therefore scoped to synthetic rows only, which is also what makes the date comparison safe, since the two sources write dates in different formats.
+
+**Weekly refresh, not daily.** Each refresh rewrites roughly 500 KB of binary Parquet. Daily commits would add ~190 MB of history a year to a repo that is otherwise ~3 MB. Weekly keeps the live app current at a fraction of the cost; the cron is a one-line change to `"0 6 * * *"` if daily is ever wanted.
+
+**A silent data-corruption bug, caught by a test.** Appending synthetic rows used a positional `INSERT`, but the source CSV and the generated frame order three columns differently — so every synthetic row was written with those values rotated. A single rotation was invisible, because the staging layer's existing column-rotation fix undid it exactly. But the generator reads its product reference data back out of the raw table, so each additional day of generation rotated the values again, until product names ended up in the category column. It was caught by a test asserting the category breakdown contains only the three real categories, and fixed by making the insert match on column name rather than position. The test now guards against regression.
 
 ---
 
@@ -271,6 +305,8 @@ uv run python ingestion/kaggle_loader.py --local
 
 `synthetic_generator.py` appends one day of orders by default; pass `--days 7` to generate a week. It always appends to whatever is already in `raw.raw_orders`, so re-run `kaggle_loader.py --local` first if you want a clean rebuild rather than more history. It also prunes generated history older than a year on each run — see [Retention](#retention).
 
+The dbt profile is committed at `dbt_project/profiles.yml` and resolves a relative path to the warehouse, so a fresh clone builds without any machine-specific configuration.
+
 ### Connecting the MCP Server to Claude Desktop
 
 Add the following to your `claude_desktop_config.json` (adjust the paths to match your machine), then restart Claude Desktop:
@@ -297,14 +333,7 @@ Add the following to your `claude_desktop_config.json` (adjust the paths to matc
 
 ## Project Background
 
-Built as a portfolio project following completion of a Master of Applied Computing (Artificial Intelligence) at the University of Windsor. Demonstrates skills in data engineering, semantic modelling, BI development, and AI integration.
-
----
-
-## Coming Soon
-
-- Bonus AI tools: natural-language-to-SQL, anomaly detection, executive summary generation, dbt lineage explainer
-- Discount-vs-margin visual on the Power BI Product Intelligence page (the data and MCP tool are already in place)
+Built as a portfolio project following completion of a Master of Applied Computing (Artificial Intelligence) at the University of Windsor. Demonstrates skills in data engineering, analytics engineering, BI development, AI integration, and CI/CD.
 
 ---
 
