@@ -8,6 +8,7 @@ a warehouse anywhere near it.
 """
 import json
 
+import conftest
 import pandas as pd
 import pytest
 
@@ -177,6 +178,88 @@ def test_no_chart_leaks_the_other_theme_s_hues(name):
     leaked_into_light = sorted(hex_ for hex_ in DARK_ONLY if hex_ in light)
     assert not leaked_into_dark, f"{name}: light-only hues in the dark spec: {leaked_into_dark}"
     assert not leaked_into_light, f"{name}: dark-only hues in the light spec: {leaked_into_light}"
+
+
+# --- Tooltips ------------------------------------------------------------
+
+@pytest.mark.parametrize("name", list(BUILDERS))
+def test_every_chart_puts_its_tooltip_somewhere_reachable(name):
+    """A tooltip on a `line` and nothing else is not a tooltip.
+
+    The audit that prompted this found two charts whose only hover target was a
+    2px stroke, both of which passed a test that merely looked for the word
+    "tooltip" in the spec. So the assertion is about the *mark* carrying it:
+    either something with area, or a nearest-point selection standing in.
+    """
+    spec = _spec(BUILDERS[name]("light"))
+    assert conftest.hover_is_reachable(spec), (
+        f"{name}: tooltip only on {sorted(conftest.tooltip_marks(spec))}"
+    )
+
+
+@pytest.mark.parametrize("name", ["revenue_trend", "revenue_vs_profit", "pareto_curve"])
+def test_line_charts_hover_by_nearest_point_on_a_full_height_rule(name):
+    """The three line charts share one crosshair helper, so they share one test."""
+    spec = _spec(BUILDERS[name]("light"))
+    assert conftest.has_nearest_hover(spec), f"{name}: no nearest-point selection"
+
+    rules = [
+        layer
+        for layer in conftest.layers(spec)
+        if conftest.mark_type(layer) == "rule" and "tooltip" in layer.get("encoding", {})
+    ]
+    assert rules, f"{name}: the tooltip is not on a crosshair rule"
+    # No y encoding is what makes the rule span the whole plot: a reader can
+    # hover anywhere in the column, not only at the height of the line.
+    assert all("y" not in rule["encoding"] for rule in rules), f"{name}: rule is not full-height"
+
+
+def test_the_revenue_and_profit_crosshair_reads_both_series_at_once():
+    """The chart exists to show the gap between two lines, so a per-mark
+    tooltip naming whichever one the cursor is nearest answers half of it."""
+    spec = _spec(BUILDERS["revenue_vs_profit"]("light"))
+    (rule,) = [
+        layer
+        for layer in conftest.layers(spec)
+        if conftest.mark_type(layer) == "rule" and "tooltip" in layer.get("encoding", {})
+    ]
+    fields = {entry["field"] for entry in rule["encoding"]["tooltip"]}
+    assert {"revenue", "profit"} <= fields
+    # The per-mark tooltip it replaced could only ever name one of them.
+    assert "measure" not in fields
+
+
+def test_the_discount_bars_have_a_hit_area_wider_than_the_bars():
+    """14px bars read as a distribution but are under the ~24px pointer target
+    minimum, so the hit area is widened without widening the mark."""
+    spec = _spec(BUILDERS["discount_margin"]("light"))
+    bands = [
+        layer
+        for layer in conftest.layers(spec)
+        if conftest.mark_type(layer) == "rect" and "x2" in layer.get("encoding", {})
+    ]
+    assert bands, "no full-band hit area over the discount bars"
+    (band,) = bands
+    assert band["mark"]["fillOpacity"] == 0, "the hit area is visible"
+    assert "tooltip" in band["encoding"]
+    assert "y" not in band["encoding"], "the hit area does not span the plot height"
+
+    # The band has to cover the bucket exactly: 0-5, 5-10, 10-15 for this data.
+    # Altair hoists a repeated frame into `datasets` and refers to it by name,
+    # so the rows are not always inline on the layer.
+    data = band["data"]
+    values = data["values"] if "values" in data else spec["datasets"][data["name"]]
+    assert [row["band_end"] for row in values] == [5.0, 10.0, 15.0]
+
+
+@pytest.mark.parametrize(
+    "name", ["region_bars", "segment_revenue_bars", "rfm_heatmap"]
+)
+def test_direct_labels_carry_their_mark_s_tooltip(name):
+    """Crossing from a bar onto the value printed beside it should not make the
+    tooltip disappear -- from the reader's side it is one object."""
+    spec = _spec(BUILDERS[name]("light"))
+    assert "text" in conftest.tooltip_marks(spec), f"{name}: the label layer has no tooltip"
 
 
 @pytest.mark.parametrize("mode", MODES)

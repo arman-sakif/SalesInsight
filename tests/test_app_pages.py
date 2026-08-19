@@ -17,6 +17,7 @@ DuckDB -- but there are only a handful of them.
 import json
 from pathlib import Path
 
+import conftest
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -150,11 +151,25 @@ def test_filters_are_reported_on_the_page():
     assert "2016" in captions and "West" in captions
 
 
-def test_charts_carry_a_tooltip_layer():
-    """A value must be readable at the mark, not only in the table."""
-    at = _run("streamlit_app.py")
+@pytest.mark.parametrize("page", PAGES)
+def test_charts_carry_a_reachable_tooltip(page):
+    """A value must be readable at the mark, not only in the table.
+
+    "Somewhere in the spec there is the word tooltip" is not the assertion:
+    that passed for a line chart whose only tooltip sat on a 2px stroke, which
+    is exactly the defect this test was meant to catch. So each chart on the
+    page has to put its tooltip on a mark with area, or bind a nearest-point
+    selection that finds the value for the reader.
+    """
+    at = _run(page)
     for chart in _charts(at):
-        assert "tooltip" in json.loads(chart.proto.spec).__str__().lower()
+        spec = json.loads(chart.proto.spec)
+        if conftest.is_placeholder(spec):
+            continue  # an empty panel has no value to read
+        assert conftest.hover_is_reachable(spec), (
+            f"{page}: a chart's only tooltip is on "
+            f"{sorted(conftest.tooltip_marks(spec))} with no nearest-point hover"
+        )
 
 
 def test_empty_selection_explains_itself_instead_of_erroring():

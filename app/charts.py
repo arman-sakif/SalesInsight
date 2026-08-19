@@ -214,6 +214,60 @@ def _empty(message: str, p: Palette) -> alt.Chart:
     )
 
 
+def _crosshair(
+    p: Palette,
+    *,
+    data: pd.DataFrame,
+    x: alt.X,
+    field: str,
+    tooltip: list,
+    y: alt.Y | None = None,
+    point_data: pd.DataFrame | None = None,
+    point_color: str | None = None,
+    color: alt.Color | None = None,
+) -> list:
+    """A nearest-point hover: a full-height rule carrying the tooltip, plus a dot.
+
+    A line is a 2px target, and asking a reader to land on one is not a tooltip.
+    Every line chart here gets its values through this instead: the
+    invisible-until-hovered ``rule`` spans the full plot height, so anywhere in
+    the column reads that x.
+
+    Hanging the tooltip on the rule rather than on the marks also makes it
+    *shared* -- every series at that x arrives in one tooltip, instead of
+    whichever line the cursor happened to be nearest.
+    """
+    hover = alt.selection_point(
+        fields=[field], nearest=True, on="pointerover", empty=False, clear="pointerout"
+    )
+    rule = (
+        alt.Chart(data)
+        .mark_rule(color=p.axis, strokeWidth=1)
+        .encode(x=x, opacity=alt.condition(hover, alt.value(1), alt.value(0)), tooltip=tooltip)
+        .add_params(hover)
+    )
+    layers = [rule]
+
+    if y is not None:
+        # The 2px ring around the dot is the surface colour, so the dot reads as
+        # sitting on the page rather than merging into the line under it. That
+        # is why the ring has to follow the theme as well.
+        mark = {"size": 90, "filled": True, "stroke": p.surface, "strokeWidth": 2}
+        if color is None:
+            mark["color"] = point_color or p.blue
+        dot = alt.Chart(point_data if point_data is not None else data).mark_point(**mark)
+        encodings = {
+            "x": x,
+            "y": y,
+            "opacity": alt.condition(hover, alt.value(1), alt.value(0)),
+        }
+        if color is not None:
+            encodings["color"] = color
+        layers.append(dot.encode(**encodings))
+
+    return layers
+
+
 # --- Time series ---------------------------------------------------------
 
 def revenue_trend(
@@ -276,25 +330,14 @@ def revenue_trend(
 
     # Crosshair + tooltip: a value must be readable at every x, not only where
     # a marker happens to sit.
-    hover = alt.selection_point(
-        fields=["period_start"], nearest=True, on="pointerover", empty=False, clear="pointerout"
-    )
-    rule = (
-        base.mark_rule(color=p.axis, strokeWidth=1)
-        .encode(x=x, opacity=alt.condition(hover, alt.value(1), alt.value(0)), tooltip=tooltip)
-        .add_params(hover)
-    )
-    # The 2px ring around the dot is the surface colour, so the dot reads as
-    # sitting on the page rather than merging into the line under it. That is
-    # why the ring has to follow the theme as well.
-    point = base.mark_point(
-        size=90, filled=True, color=p.blue, stroke=p.surface, strokeWidth=2
-    ).encode(
+    layers += _crosshair(
+        p,
+        data=df,
         x=x,
+        field="period_start",
+        tooltip=tooltip,
         y=alt.Y("revenue_rolling:Q" if has_rolling else "revenue:Q"),
-        opacity=alt.condition(hover, alt.value(1), alt.value(0)),
     )
-    layers += [rule, point]
 
     chart = alt.layer(*layers).properties(height=height)
     if has_rolling:
@@ -314,6 +357,10 @@ def revenue_vs_profit(
     a dual-axis chart. Profit is small against revenue and that gap is the
     point: it is the margin story, and a second y-scale would flatten it into a
     fake correlation.
+
+    Because the gap is the subject, the crosshair reads *both* series at the
+    hovered month rather than whichever line the pointer is nearest. A per-mark
+    tooltip would answer half the question the chart exists to ask.
     """
     p = palette(mode)
     if df.empty:
@@ -335,22 +382,29 @@ def revenue_vs_profit(
         scale=alt.Scale(domain=["Revenue", "Profit"], range=[p.blue, p.orange]),
         legend=alt.Legend(orient="top", direction="horizontal", offset=4),
     )
-    chart = (
+    lines = (
         alt.Chart(long)
         .mark_line(strokeWidth=2, strokeJoin="round", strokeCap="round", interpolate="monotone")
-        .encode(
-            x=x,
-            y=y,
-            color=color,
-            tooltip=[
-                alt.Tooltip("period_start:T", title="Month", format="%b %Y"),
-                alt.Tooltip("measure:N", title="Measure"),
-                alt.Tooltip("amount:Q", title="Amount", format=MONEY),
-            ],
-        )
-        .properties(height=height)
+        .encode(x=x, y=y, color=color)
     )
-    return _style(chart, p)
+    # The rule reads the wide frame, which is what lets one tooltip name both
+    # measures at the same x; the dots read the long one, so each series gets
+    # its own marker in its own colour.
+    hover = _crosshair(
+        p,
+        data=df,
+        x=x,
+        field="period_start",
+        tooltip=[
+            alt.Tooltip("period_start:T", title="Month", format="%b %Y"),
+            alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
+            alt.Tooltip("profit:Q", title="Profit", format=MONEY),
+        ],
+        y=y,
+        point_data=long,
+        color=color,
+    )
+    return _style(alt.layer(lines, *hover).properties(height=height), p)
 
 
 # --- Geography -----------------------------------------------------------
@@ -457,10 +511,12 @@ def region_bars(
         x=alt.X("total_revenue:Q", title="Revenue", axis=alt.Axis(format="$,.0s")),
     )
     bars = base.mark_bar(color=p.blue, height=20, cornerRadiusEnd=4).encode(tooltip=tooltip)
-    # Four bars, so every one can carry its value without becoming noise.
+    # Four bars, so every one can carry its value without becoming noise. The
+    # label repeats its bar's tooltip: a pointer crossing from the bar onto the
+    # text beside it should not make the tooltip blink out.
     labels = base.mark_text(
         align="left", dx=6, color=p.ink_secondary, fontSize=11, font=FONT
-    ).encode(text=alt.Text("total_revenue:Q", format=MONEY))
+    ).encode(text=alt.Text("total_revenue:Q", format=MONEY), tooltip=tooltip)
     return _style(alt.layer(bars, labels).properties(height=height), p)
 
 
@@ -520,6 +576,7 @@ def rfm_heatmap(
     labels = base.mark_text(fontSize=11, font=FONT).encode(
         text=alt.Text("customers:Q", format=","),
         color=alt.condition(alt.datum.revenue > midpoint, alt.value(high), alt.value(low)),
+        tooltip=tooltip,
     )
     return _style(alt.layer(cells, labels).properties(height=height), p)
 
@@ -550,17 +607,7 @@ def pareto_curve(
     line = (
         alt.Chart(df)
         .mark_line(strokeWidth=2, color=p.blue, strokeJoin="round", strokeCap="round")
-        .encode(
-            x=x,
-            y=y,
-            tooltip=[
-                alt.Tooltip("rank:Q", title="Rank"),
-                alt.Tooltip("product_name:N", title="Product"),
-                alt.Tooltip("category:N", title="Category"),
-                alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
-                alt.Tooltip("cumulative_pct:Q", title="Cumulative %", format=PERCENT),
-            ],
-        )
+        .encode(x=x, y=y)
     )
     area = (
         alt.Chart(df)
@@ -579,7 +626,38 @@ def pareto_curve(
         .mark_text(align="left", dx=6, dy=-6, color=p.ink_muted, fontSize=11, font=FONT)
         .encode(y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 100])), text="t:N")
     )
-    return _style(alt.layer(area, line, rule, label).properties(height=height), p)
+    # The curve flattens to near-horizontal on the right, where the ranks are
+    # densest: without the crosshair, "which product is this?" means landing on
+    # a 2px stroke.
+    hover = _crosshair(
+        p,
+        data=df,
+        x=x,
+        field="rank",
+        tooltip=[
+            alt.Tooltip("rank:Q", title="Rank"),
+            alt.Tooltip("product_name:N", title="Product"),
+            alt.Tooltip("category:N", title="Category"),
+            alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
+            alt.Tooltip("cumulative_pct:Q", title="Cumulative %", format=PERCENT),
+        ],
+        y=y,
+    )
+    return _style(alt.layer(area, line, rule, label, *hover).properties(height=height), p)
+
+
+def _hit_bands(df: pd.DataFrame, field: str, default_width: float = 5.0) -> pd.DataFrame:
+    """Add the right-hand edge of each bucket, for a full-band hit area.
+
+    The width is read off the data rather than assumed, so re-bucketing the
+    query cannot silently leave gaps between the bands.
+    """
+    data = df.copy()
+    steps = data[field].sort_values().diff().dropna()
+    positive = steps[steps > 0]
+    width = float(positive.min()) if not positive.empty else default_width
+    data["band_end"] = data[field] + width
+    return data
 
 
 def discount_margin(
@@ -621,7 +699,16 @@ def discount_margin(
         .mark_rule(color=p.axis, strokeWidth=1)
         .encode(y="y:Q")
     )
-    return _style(alt.layer(bars, zero).properties(height=height), p)
+    # The bars are 14px wide on purpose -- they read as a distribution -- but
+    # 14px is under the ~24px minimum for a pointer target. So the hit area is
+    # widened without widening the mark: an invisible full-height band covering
+    # the whole discount bucket, carrying the same tooltip.
+    hit = (
+        alt.Chart(_hit_bands(df, "discount_pct"))
+        .mark_rect(fill=p.surface, fillOpacity=0)
+        .encode(x=x, x2="band_end:Q", tooltip=tooltip)
+    )
+    return _style(alt.layer(bars, zero, hit).properties(height=height), p)
 
 
 def category_heatmap(
@@ -721,5 +808,5 @@ def segment_revenue_bars(
     bars = base.mark_bar(color=p.blue, height=20, cornerRadiusEnd=4).encode(tooltip=tooltip)
     labels = base.mark_text(
         align="left", dx=6, color=p.ink_secondary, fontSize=11, font=FONT
-    ).encode(text=alt.Text("total_revenue:Q", format=MONEY))
+    ).encode(text=alt.Text("total_revenue:Q", format=MONEY), tooltip=tooltip)
     return _style(alt.layer(bars, labels).properties(height=height), p)
