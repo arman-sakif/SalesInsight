@@ -138,7 +138,7 @@ The server opens DuckDB **read-only**, so an AI tool call can never write to the
 
 ### Available Tools
 
-Every tool that reads the fact table takes the same two filters — `period` (`all_time`, `this_year`, `last_year`, `last_30_days`, `last_90_days`, or a year) and `regions` — so the assistant can narrow any answer the same way the dashboard does.
+Every tool that reads the fact table takes the same two filters — `period` (`all_time`, `this_year`, `last_year`, `last_30_days`, `last_90_days`, a year, or an explicit `range:<start>:<end>`) and `regions` — so the assistant can narrow any answer the same way the dashboard does.
 
 | Tool | Description | Extra filters |
 |---|---|---|
@@ -173,7 +173,7 @@ A five-page dashboard in the browser — no Power BI Desktop required. Each page
 uv run streamlit run app/streamlit_app.py
 ```
 
-One filter panel scopes every page — period, region, and, where they apply, category, sub-category, and RFM segment. Selections persist across navigation, and the active slice is printed under the page title so you always know what you are looking at. Periods are built from the data at runtime rather than hardcoded, so an option that would return nothing is never offered.
+The app renders in whichever theme the viewer prefers, light or dark, with a palette validated for each. One filter panel scopes every page — period, region, and, where they apply, category, sub-category, and RFM segment. Selections persist across navigation, and the active slice is printed under the page title so you always know what you are looking at. Periods are built from the data at runtime rather than hardcoded, so an option that would return nothing is never offered.
 
 **Executive Overview** — Six headline KPIs with period-over-period deltas, a revenue trend that switches grain with the selection, and a state choropleth beside the region summary.
 
@@ -195,7 +195,7 @@ One filter panel scopes every page — period, region, and, where they apply, ca
 
 ### Charting decisions
 
-Charts are Altair, which already ships with Streamlit — adding Plotly would have been a dependency for no gain. Three rules the visuals are held to, because each is a way dashboards quietly mislead:
+Charts are Altair, which already ships with Streamlit — adding Plotly would have been a dependency for no gain. Four rules the visuals are held to, because each is a way dashboards quietly mislead:
 
 - **No dual-axis charts.** Revenue and profit share one axis on the Trends page; they are both dollars, and the distance between the lines *is* the margin story. A second y-scale would rescale that gap into a coincidence. The Pareto chart drops the conventional revenue bars for the same reason and keeps the cumulative curve, with the ranked table beside it.
 - **The palette is validated, not chosen.** The eight categorical hues were run through a colour-vision-deficiency check: every adjacent pair clears a protan/deutan/tritan separation threshold against the page surface. Slots are assigned in fixed order and scales pin an explicit domain, so filtering a region out cannot repaint the survivors. The app follows the viewer's light or dark theme, and dark is a second validated palette rather than the light one inverted — including the sequential ramp, which runs the other way so magnitude still reads as distance from the page.
@@ -246,7 +246,7 @@ The constraints that shaped the design, and how each was resolved.
 
 **A blanket retention policy would have destroyed the analysis.** "Delete everything older than a year" would have dropped all 9,994 historical rows and left only the synthetic window — collapsing the year-over-year comparisons and flattening RFM recency to a few days. Retention is therefore scoped to synthetic rows only, which is also what makes the date comparison safe, since the two sources write dates in different formats.
 
-**Weekly refresh, not daily.** Each refresh rewrites roughly 500 KB of binary Parquet. Daily commits would add ~190 MB of history a year to a repo that is otherwise ~3 MB. Weekly keeps the live app current at a fraction of the cost; the cron is a one-line change to `"0 6 * * *"` if daily is ever wanted.
+**Weekly refresh, not daily.** Each refresh rewrites roughly 950 KB of binary Parquet — `fact_sales.parquet` alone is 848 KB since the synthetic window widened to 90 days. Daily commits would add ~340 MB of history a year to a repo whose tracked content is otherwise ~6 MB. Weekly keeps the live app current at a fraction of the cost; the cron is a one-line change to `"0 6 * * *"` if daily is ever wanted.
 
 **A silent data-corruption bug, caught by a test.** Appending synthetic rows used a positional `INSERT`, but the source CSV and the generated frame order three columns differently — so every synthetic row was written with those values rotated. A single rotation was invisible, because the staging layer's existing column-rotation fix undid it exactly. But the generator reads its product reference data back out of the raw table, so each additional day of generation rotated the values again, until product names ended up in the category column. It was caught by a test asserting the category breakdown contains only the three real categories, and fixed by making the insert match on column name rather than position. The test now guards against regression.
 
