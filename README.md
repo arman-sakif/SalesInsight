@@ -20,9 +20,9 @@ An end-to-end analytics platform: a dbt-modelled warehouse feeding a Power BI re
 | **Data quality** | A column-rotation defect in the source data corrected in staging with zero row loss |
 | **BI development** | Power BI semantic model — star schema, 16 DAX measures, time intelligence, 4 report pages |
 | **AI integration** | An MCP server exposing 8 tools over the warehouse, connected to Claude Desktop |
-| **Web development** | A deployed 4-page Streamlit app reusing the MCP tool functions directly |
+| **Web development** | A deployed 5-page Streamlit app reusing the MCP tool functions directly |
 | **DevOps** | Two GitHub Actions workflows — CI on every PR, plus a scheduled job that rebuilds the data and redeploys the live app |
-| **Testing & tooling** | ruff linting and 22 pytest tests in CI, alongside the 23 dbt data tests |
+| **Testing & tooling** | ruff linting and 112 pytest tests in CI, alongside the 23 dbt data tests |
 
 ---
 
@@ -56,12 +56,14 @@ Figures below marked **≈** are approximate: the synthetic window is regenerate
 
 | Measure | Current |
 |---|---|
-| Fact table rows | ≈10,700 order lines |
-| Distinct orders | ≈5,700 |
+| Fact table rows | ≈18,700 order lines |
+| Distinct orders | ≈13,700 |
 | Customers | ≈790 |
 | Products | ≈1,860 |
-| Total revenue | ≈$2.56M |
-| Gross profit margin | ≈11.8% |
+| Total revenue | ≈$5.57M |
+| Gross profit margin | ≈8.1% |
+
+The synthetic window is a rolling **90 days**, which is what makes the "Last 30 days" and "Last 90 days" filters and the daily trend line meaningful. It is deliberately higher-volume than the historical extract, so all-time totals are weighted toward it.
 
 ---
 
@@ -135,22 +137,27 @@ A Model Context Protocol server that exposes the warehouse as AI-queryable tools
 The server opens DuckDB **read-only**, so an AI tool call can never write to the warehouse and never contends with dbt for the single-writer lock.
 
 ### Available Tools
-| Tool | Description |
-|---|---|
-| `query_metric` | Query a core metric (revenue, profit, margin, orders, AOV, units, customers) |
-| `explain_metric` | Explain what a metric means and how it's calculated |
-| `get_top_customers` | Top N customers by revenue with RFM segment |
-| `get_rfm_segments` | Customer distribution across RFM segments |
-| `revenue_by_region` | Revenue, profit, and margin by region |
-| `get_product_performance` | Top products, optionally filtered by category |
-| `get_category_breakdown` | Revenue, margin, and average discount by category and sub-category |
-| `get_discount_impact` | Discount-vs-margin analysis: revenue, margin, and profit by discount band |
+
+Every tool that reads the fact table takes the same two filters — `period` (`all_time`, `this_year`, `last_year`, `last_30_days`, `last_90_days`, or a year) and `regions` — so the assistant can narrow any answer the same way the dashboard does.
+
+| Tool | Description | Extra filters |
+|---|---|---|
+| `query_metric` | Query a core metric (revenue, profit, margin, orders, AOV, units, customers) | — |
+| `explain_metric` | Explain what a metric means and how it's calculated | not filtered |
+| `get_top_customers` | Top N customers by revenue with RFM segment | `segments` |
+| `get_rfm_segments` | Customer distribution across RFM segments | — |
+| `revenue_by_region` | Revenue, profit, and margin by region | — |
+| `get_product_performance` | Top products, optionally filtered by category | `sub_categories` |
+| `get_category_breakdown` | Revenue, margin, and average discount by category and sub-category | `categories` |
+| `get_discount_impact` | Discount-vs-margin analysis: revenue, margin, and profit by discount band | `categories` |
+
+The period vocabulary is built in one place (`mcp_server/tools/_filters.py`) rather than reimplemented per module, which is what keeps "this year" meaning the same thing to the AI, the dashboard, and the report.
 
 ### Example
 
 > **You:** What's my total revenue and gross profit margin?
 >
-> **Claude:** *(calls `query_metric` twice)* Your total revenue is ≈$2.56M with a gross profit margin of ≈11.8%.
+> **Claude:** *(calls `query_metric` twice)* Your total revenue is ≈$5.57M with a gross profit margin of ≈8.1%.
 
 `explain_metric` is the tool worth noting: it returns the definition **and the SQL expression** behind a metric, so the assistant can show its working rather than asking you to trust a number.
 
@@ -158,7 +165,7 @@ The server opens DuckDB **read-only**, so an AI tool call can never write to the
 
 ## Web App (Streamlit)
 
-A four-page dashboard in the browser — no Power BI Desktop required. Each page calls the exact MCP tool functions, so the web figures match the Power BI report and the AI answers by construction rather than by discipline.
+A five-page dashboard in the browser — no Power BI Desktop required. Each page calls the exact MCP tool functions, so the web figures match the Power BI report and the AI answers by construction rather than by discipline.
 
 **🚀 Live: [sales-insight-9011.streamlit.app](https://sales-insight-9011.streamlit.app/)**
 
@@ -166,21 +173,33 @@ A four-page dashboard in the browser — no Power BI Desktop required. Each page
 uv run streamlit run app/streamlit_app.py
 ```
 
-**Executive Overview** — Headline KPIs (revenue, profit, margin, orders, AOV, customers), revenue by region, and an expandable metric glossary backed by `explain_metric`.
+One filter panel scopes every page — period, region, and, where they apply, category, sub-category, and RFM segment. Selections persist across navigation, and the active slice is printed under the page title so you always know what you are looking at. Periods are built from the data at runtime rather than hardcoded, so an option that would return nothing is never offered.
+
+**Executive Overview** — Six headline KPIs with period-over-period deltas, a revenue trend that switches grain with the selection, and a state choropleth beside the region summary.
 
 ![Streamlit — Executive Overview](docs/screenshots/streamlit_home.png)
 
-**Customer Intelligence** — Top-N customers by revenue with their RFM segment, plus the RFM segment distribution.
+**Trends** — Daily revenue with a 7-day trailing average for the live window, and monthly revenue against profit for the 2014–2017 history.
+
+**Customer Intelligence** — A recency × frequency heatmap shaded by revenue, segment revenue, and top-N customers with a share-of-total bar.
 
 ![Streamlit — Customer Intelligence](docs/screenshots/streamlit_customer_intelligence.png)
 
-**Regional Performance** — Revenue, profit, and margin by region with summary tiles and comparative charts.
+**Regional Performance** — The state choropleth at full size with a ranked state table, plus the four-region summary.
 
 ![Streamlit — Regional Performance](docs/screenshots/streamlit_regional_performance.png)
 
-**Product Intelligence** — Top products by category, category/sub-category margins, and a discount-vs-margin analysis showing how margin erodes as discounts deepen.
+**Product Intelligence** — Top products by category, a Pareto curve of catalogue concentration, a category × sub-category heatmap, and discount-vs-margin with a zero-margin reference line.
 
 ![Streamlit — Product Intelligence](docs/screenshots/streamlit_Product_Intelligence.png)
+
+### Charting decisions
+
+Charts are Altair, which already ships with Streamlit — adding Plotly would have been a dependency for no gain. Three rules the visuals are held to, because each is a way dashboards quietly mislead:
+
+- **No dual-axis charts.** Revenue and profit share one axis on the Trends page; they are both dollars, and the distance between the lines *is* the margin story. A second y-scale would rescale that gap into a coincidence. The Pareto chart drops the conventional revenue bars for the same reason and keeps the cumulative curve, with the ranked table beside it.
+- **The palette is validated, not chosen.** The eight categorical hues were run through a colour-vision-deficiency check: every adjacent pair clears a protan/deutan/tritan separation threshold against the page surface. Slots are assigned in fixed order and scales pin an explicit domain, so filtering a region out cannot repaint the survivors.
+- **Colour never carries a value alone.** Every chart has a table beside or beneath it, which is also what makes the two lower-contrast hues legitimate.
 
 ---
 
@@ -188,7 +207,7 @@ uv run streamlit run app/streamlit_app.py
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (10 models + 23 data tests), exports the marts, and smoke-tests the MCP tools with 22 pytest tests |
+| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (10 models + 23 data tests), exports the marts, and runs 112 pytest tests over the tool layer, the app queries, and every Streamlit page |
 | `refresh-data.yml` | weekly cron + manual dispatch | Runs the same pipeline, then commits the refreshed `data/parquet/*.parquet` back to `master`, which triggers a Streamlit Community Cloud redeploy |
 
 The second workflow is the interesting one: it closes the loop from raw data to deployed dashboard with no human in it. A scheduled run rebuilds the warehouse, regenerates the recent-orders window, revalidates every dbt test, and publishes the result — so the live app keeps showing current data without anyone touching it.
@@ -196,14 +215,14 @@ The second workflow is the interesting one: it closes the loop from raw data to 
 Two details worth calling out:
 
 - **No secrets in CI.** `kaggle_loader.py --local` loads the CSV snapshot committed at `data/raw/superstore.csv` instead of re-downloading the dataset, so both workflows run with zero configured credentials.
-- **The refresh regenerates rather than appends.** `warehouse.db` is gitignored, so each run starts from the raw CSV and generates a rolling window through today (`synthetic_generator.py --days 7`). This keeps the pipeline reproducible: the same commit always produces the same shape of warehouse.
+- **The refresh regenerates rather than appends.** `warehouse.db` is gitignored, so each run starts from the raw CSV and generates a rolling window through today (`synthetic_generator.py --days 90`). This keeps the pipeline reproducible: the same commit always produces the same shape of warehouse.
 
 ### Retention
 
 `synthetic_generator.py` applies a one-year retention policy after generating, so the warehouse keeps at most 365 days of generated history:
 
 ```bash
-uv run python ingestion/synthetic_generator.py --days 7 --retain-days 365  # default
+uv run python ingestion/synthetic_generator.py --days 90 --retain-days 365 # what CI runs
 uv run python ingestion/synthetic_generator.py --days 0                    # prune only, generate nothing
 uv run python ingestion/synthetic_generator.py --no-prune                  # generate without pruning
 ```
@@ -219,6 +238,10 @@ The constraints that shaped the design, and how each was resolved.
 **Power BI cannot read DuckDB directly.** The ODBC driver fails because Power BI spawns parallel Mashup processes that collide on DuckDB's single-writer lock. Rather than switch warehouses, the pipeline exports each mart to Parquet and Power BI imports those — which also made the marts portable enough to deploy the web app later.
 
 **The web app has no warehouse to read.** Streamlit Community Cloud only has the committed repo, and `warehouse.db` is gitignored. The connection helper detects this and builds an in-memory DuckDB with the Parquet marts registered as views under the same schema name, so every query in the tool layer runs unchanged against either source. One code path, two environments.
+
+**A filter that appears to apply and doesn't is worse than no filter.** Four of the eight MCP tools were all-time only, while the dashboard rendered a Period selector above the panels they fed — so on one page the slicer moved and nothing underneath it changed. The fix was to push `period` and `regions` down into every tool rather than to hide the widget, which incidentally made the AI able to answer "top products this quarter" too. The period vocabulary now lives in one module instead of three near-copies, and the page tests assert that changing a filter changes the render.
+
+**Two data sources, eight years apart.** The Superstore extract ends in 2017 and the synthetic feed is a rolling window ending today, so any single time series drawn across the whole dataset is mostly a flatline through a gap that does not mean "no sales". The Trends page therefore has two panels split on `is_synthetic`, and the period options are generated from the years that actually contain orders — which is why "Last year" simply does not appear in the dropdown rather than appearing and returning nothing.
 
 **A blanket retention policy would have destroyed the analysis.** "Delete everything older than a year" would have dropped all 9,994 historical rows and left only the synthetic window — collapsing the year-over-year comparisons and flattening RFM recency to a few days. Retention is therefore scoped to synthetic rows only, which is also what makes the date comparison safe, since the two sources write dates in different formats.
 
@@ -273,7 +296,7 @@ No Kaggle account? Skip the `.env` step and load the committed CSV snapshot inst
 uv run python ingestion/kaggle_loader.py --local
 ```
 
-`synthetic_generator.py` appends one day of orders by default; pass `--days 7` to generate a week. It always appends to whatever is already in `raw.raw_orders`, so re-run `kaggle_loader.py --local` first if you want a clean rebuild rather than more history. It also prunes generated history older than a year on each run — see [Retention](#retention).
+`synthetic_generator.py` appends one day of orders by default; pass `--days 90` to generate the rolling window CI builds. It always appends to whatever is already in `raw.raw_orders`, so re-run `kaggle_loader.py --local` first if you want a clean rebuild rather than more history. It also prunes generated history older than a year on each run — see [Retention](#retention).
 
 The dbt profile is committed at `dbt_project/profiles.yml` and resolves a relative path to the warehouse, so a fresh clone builds without any machine-specific configuration.
 
