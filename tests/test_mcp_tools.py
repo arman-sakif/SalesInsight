@@ -89,3 +89,107 @@ def test_discount_impact_margin_falls_as_discount_rises():
 
     margins = [row["avg_margin_pct"] for row in rows]
     assert margins == sorted(margins, reverse=True)
+
+
+# --- Period and region filters -------------------------------------------
+#
+# The point of these is not that the filtered call returns rows -- it is that
+# it returns *different* rows. Four of these tools used to ignore `period`
+# entirely while the dashboard rendered a Period slicer above them, so a test
+# that only asserted "rows came back" would have passed against the bug.
+
+def _revenue(rows: list[dict], key: str = "total_revenue") -> float:
+    return float(sum(row[key] for row in rows if row[key] is not None))
+
+
+def test_query_metric_period_narrows_the_value():
+    all_time = query_metric("total_revenue")["value"]
+    year = query_metric("total_revenue", "2016")["value"]
+    assert year is not None
+    assert 0 < year < all_time
+
+
+def test_query_metric_region_filter_partitions_the_total():
+    """The four regions must sum back to the unfiltered total."""
+    total = float(query_metric("total_revenue")["value"])
+    parts = sum(
+        float(query_metric("total_revenue", regions=[region])["value"])
+        for region in sorted(REGIONS)
+    )
+    assert parts == pytest.approx(total, rel=1e-6)
+
+
+def test_query_metric_empty_region_list_means_all_regions():
+    assert query_metric("total_revenue", regions=[])["value"] == query_metric("total_revenue")["value"]
+
+
+def test_rfm_segments_respect_period():
+    all_time = _revenue(get_rfm_segments())
+    year = _revenue(get_rfm_segments("2016"))
+    assert 0 < year < all_time
+
+
+def test_rfm_segments_respect_regions():
+    west = _revenue(get_rfm_segments(regions=["West"]))
+    assert 0 < west < _revenue(get_rfm_segments())
+
+
+def test_product_performance_respects_period():
+    all_time = _revenue(get_product_performance(n=10))
+    year = _revenue(get_product_performance(n=10, period="2016"))
+    assert 0 < year < all_time
+
+
+def test_product_performance_filters_by_sub_category():
+    rows = get_product_performance(n=10, sub_categories=["Chairs"])
+    assert rows
+    assert {row["sub_category"] for row in rows} == {"Chairs"}
+
+
+def test_product_performance_filters_by_region():
+    rows = get_product_performance(n=5, regions=["West"])
+    assert rows
+    assert _revenue(rows) < _revenue(get_product_performance(n=5))
+
+
+def test_category_breakdown_respects_period():
+    all_time = _revenue(get_category_breakdown())
+    year = _revenue(get_category_breakdown("2016"))
+    assert 0 < year < all_time
+
+
+def test_category_breakdown_filters_by_category():
+    rows = get_category_breakdown(categories=["Technology"])
+    assert rows
+    assert {row["category"] for row in rows} == {"Technology"}
+
+
+def test_discount_impact_respects_period():
+    all_time = _revenue(get_discount_impact())
+    year = _revenue(get_discount_impact("2016"))
+    assert 0 < year < all_time
+
+
+def test_discount_impact_category_filter_joins_dim_product():
+    """The category filter is the only reason this query joins dim_product,
+    so it is the one path where the join is built conditionally."""
+    rows = get_discount_impact(categories=["Technology"])
+    assert rows
+    assert _revenue(rows) < _revenue(get_discount_impact())
+
+
+def test_top_customers_respects_segments():
+    rows = get_top_customers(n=10, segments=["Champions"])
+    assert rows
+    assert {row["rfm_segment"] for row in rows} == {"Champions"}
+
+
+def test_top_customers_respects_period_and_region():
+    all_time = _revenue(get_top_customers(n=10))
+    narrowed = _revenue(get_top_customers(n=10, period="2016", regions=["West"]))
+    assert 0 < narrowed < all_time
+
+
+def test_revenue_by_region_can_be_restricted_to_a_subset():
+    rows = revenue_by_region(regions=["West", "South"])
+    assert {row["region"] for row in rows} == {"West", "South"}

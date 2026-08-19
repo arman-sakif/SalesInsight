@@ -1,5 +1,6 @@
 """Core business metric queries."""
 from mcp_server.db import run_query
+from mcp_server.tools._filters import in_predicate, period_predicate, where_clause
 
 METRIC_DEFINITIONS = {
     "total_revenue": {
@@ -40,12 +41,15 @@ METRIC_DEFINITIONS = {
 }
 
 
-def query_metric(metric: str, period: str = "all_time") -> dict:
-    """Query a single business metric, optionally filtered by period.
+def query_metric(metric: str, period: str = "all_time", regions: list[str] | None = None) -> dict:
+    """Query a single business metric, optionally filtered by period and region.
 
     Args:
         metric: One of the keys in METRIC_DEFINITIONS.
-        period: 'all_time', 'this_year', 'last_year', or a 4-digit year like '2016'.
+        period: 'all_time', 'this_year', 'last_year', 'last_30_days',
+            'last_90_days', or a 4-digit year like '2016'.
+        regions: Restrict to these regions (West/East/Central/South).
+            None or empty means all regions.
     """
     if metric not in METRIC_DEFINITIONS:
         return {
@@ -54,14 +58,16 @@ def query_metric(metric: str, period: str = "all_time") -> dict:
         }
 
     definition = METRIC_DEFINITIONS[metric]
-    where_clause, filter_label = _build_period_filter(period)
+    params: list = []
+    period_sql, filter_label = period_predicate(period)
+    clause = where_clause(period_sql, in_predicate("region", regions, params))
 
     sql = f"""
         SELECT {definition['sql']} AS value
         FROM main.fact_sales
-        {where_clause}
+        {clause}
     """
-    rows = run_query(sql)
+    rows = run_query(sql, params)
     value = rows[0]["value"] if rows else None
 
     return {
@@ -70,19 +76,6 @@ def query_metric(metric: str, period: str = "all_time") -> dict:
         "value": value,
         "period": filter_label,
     }
-
-
-def _build_period_filter(period: str) -> tuple[str, str]:
-    """Return a WHERE clause and a human-readable label for the period."""
-    if period == "all_time":
-        return "", "All time"
-    if period == "this_year":
-        return "WHERE order_year = YEAR(CURRENT_DATE)", "This year"
-    if period == "last_year":
-        return "WHERE order_year = YEAR(CURRENT_DATE) - 1", "Last year"
-    if period.isdigit() and len(period) == 4:
-        return f"WHERE order_year = {int(period)}", f"Year {period}"
-    return "", "All time"
 
 
 def explain_metric(metric: str) -> dict:
