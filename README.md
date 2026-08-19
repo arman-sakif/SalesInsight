@@ -22,7 +22,7 @@ An end-to-end analytics platform: a dbt-modelled warehouse feeding a Power BI re
 | **AI integration** | An MCP server exposing 8 tools over the warehouse, connected to Claude Desktop |
 | **Web development** | A deployed 5-page Streamlit app reusing the MCP tool functions directly |
 | **DevOps** | Two GitHub Actions workflows — CI on every PR, plus a scheduled job that rebuilds the data and redeploys the live app |
-| **Testing & tooling** | ruff linting and 112 pytest tests in CI, alongside the 23 dbt data tests |
+| **Testing & tooling** | ruff linting and 172 pytest tests in CI, alongside the 23 dbt data tests |
 
 ---
 
@@ -198,8 +198,9 @@ One filter panel scopes every page — period, region, and, where they apply, ca
 Charts are Altair, which already ships with Streamlit — adding Plotly would have been a dependency for no gain. Three rules the visuals are held to, because each is a way dashboards quietly mislead:
 
 - **No dual-axis charts.** Revenue and profit share one axis on the Trends page; they are both dollars, and the distance between the lines *is* the margin story. A second y-scale would rescale that gap into a coincidence. The Pareto chart drops the conventional revenue bars for the same reason and keeps the cumulative curve, with the ranked table beside it.
-- **The palette is validated, not chosen.** The eight categorical hues were run through a colour-vision-deficiency check: every adjacent pair clears a protan/deutan/tritan separation threshold against the page surface. Slots are assigned in fixed order and scales pin an explicit domain, so filtering a region out cannot repaint the survivors.
+- **The palette is validated, not chosen.** The eight categorical hues were run through a colour-vision-deficiency check: every adjacent pair clears a protan/deutan/tritan separation threshold against the page surface. Slots are assigned in fixed order and scales pin an explicit domain, so filtering a region out cannot repaint the survivors. The app follows the viewer's light or dark theme, and dark is a second validated palette rather than the light one inverted — including the sequential ramp, which runs the other way so magnitude still reads as distance from the page.
 - **Colour never carries a value alone.** Every chart has a table beside or beneath it, which is also what makes the two lower-contrast hues legitimate.
+- **A tooltip has to be reachable.** Line charts hover by nearest point on a full-height crosshair rule rather than asking the reader to land on a 2px stroke, and the 14px discount bars carry a wider invisible hit band. The tables stay regardless: tooltips enhance, they are never the only way to read a value.
 
 ---
 
@@ -207,7 +208,7 @@ Charts are Altair, which already ships with Streamlit — adding Plotly would ha
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (10 models + 23 data tests), exports the marts, and runs 112 pytest tests over the tool layer, the app queries, and every Streamlit page |
+| `ci.yml` | every pull request and push to `master` | Lints with ruff, rebuilds the warehouse from the committed CSV, runs `dbt build` (10 models + 23 data tests), exports the marts, and runs 172 pytest tests over the tool layer, the app queries, the chart builders, and every Streamlit page |
 | `refresh-data.yml` | weekly cron + manual dispatch | Runs the same pipeline, then commits the refreshed `data/parquet/*.parquet` back to `master`, which triggers a Streamlit Community Cloud redeploy |
 
 The second workflow is the interesting one: it closes the loop from raw data to deployed dashboard with no human in it. A scheduled run rebuilds the warehouse, regenerates the recent-orders window, revalidates every dbt test, and publishes the result — so the live app keeps showing current data without anyone touching it.
