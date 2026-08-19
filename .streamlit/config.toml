@@ -1,0 +1,72 @@
+# Streamlit theme for SalesInsight.
+#
+# The colours are not picked by eye. They come from a categorical palette run
+# through a colour-vision-deficiency validator: every adjacent pair in the
+# eight-slot order clears a protan/deutan/tritan separation threshold and a
+# normal-vision floor against the surface colour set below. Charts assign slots
+# in fixed order (see app/charts.py) rather than cycling, so a series keeps its
+# colour when a filter changes the series count.
+#
+# Light only, on purpose. Streamlit's chart palettes (chartCategoricalColors,
+# chartSequentialColors) are single top-level options -- unlike the surface
+# colours, they cannot be set per mode. A dark palette is not an inversion of a
+# light one; it needs its own steps re-validated against the dark surface, and
+# there is nowhere here to declare them. Shipping a [theme.dark] block would
+# therefore render light-surface chart colours on a dark background. Viewers
+# can still force dark from Streamlit's settings menu; that is their override,
+# not a mode this app claims to have designed for.
+
+[theme]
+base = "light"
+font = "sans-serif"
+baseRadius = "medium"
+showWidgetBorder = true
+
+backgroundColor = "#fcfcfb"          # chart surface -- charts render directly on this
+secondaryBackgroundColor = "#f0efec" # sidebar, table headers, KPI cards
+textColor = "#0b0b0b"
+primaryColor = "#2a78d6"
+borderColor = "#e1e0d9"
+linkColor = "#256abf"
+
+# Fixed slot order. Used by Streamlit's own chart elements; app/charts.py reads
+# the same values so every visual in the app shares one system.
+chartCategoricalColors = [
+    "#2a78d6", # 1 blue
+    "#eb6834", # 2 orange
+    "#1baf7a", # 3 aqua
+    "#eda100", # 4 yellow
+    "#e87ba4", # 5 magenta
+    "#008300", # 6 green
+    "#4a3aa7", # 7 violet
+    "#e34948", # 8 red
+]
+
+# Single-hue blue, light to dark, for continuous magnitude (the state
+# choropleth and the category heatmap).
+chartSequentialColors = [
+    "#cde2fb",
+    "#b7d3f6",
+    "#9ec5f4",
+    "#86b6ef",
+    "#6da7ec",
+    "#5598e7",
+    "#3987e5",
+    "#2a78d6",
+    "#256abf",
+    "#1c5cab",
+]
+
+# Blue to red through a neutral grey. Used where a value has a sign -- profit
+# margin above or below zero -- never for plain magnitude.
+chartDivergingColors = [
+    "#1c5cab",
+    "#2a78d6",
+    "#6da7ec",
+    "#cde2fb",
+    "#f0efec",
+    "#f7d0cf",
+    "#ef9f9e",
+    "#e34948",
+    "#b52c2b",
+]
