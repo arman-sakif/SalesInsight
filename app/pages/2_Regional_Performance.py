@@ -1,47 +1,113 @@
-"""Regional Performance — revenue, profit, and margin by region."""
+"""Regional Performance — geography from four regions down to fifty states."""
 import streamlit as st
 
-from _shared import money, page_setup, period_selector, region_revenue, to_frame
+from _shared import (
+    count_column,
+    filter_caption,
+    kpi_row,
+    money_column,
+    page_setup,
+    percent_column,
+    region_revenue,
+    sidebar_filters,
+    state_revenue,
+    table,
+    to_frame,
+)
+
+import charts
 
 page_setup("Regional Performance", "🗺️")
 
-period = period_selector()
+st.caption(
+    "`dim_region` is a four-row dimension; the granular geography lives on "
+    "`fact_sales` as state and city. Both are shown here — the map for where "
+    "the business actually is, the region table for how it is managed."
+)
 
-region_df = to_frame(region_revenue(period))
-if region_df.empty:
-    st.info("No data for the selected period.")
-    st.stop()
+filters = sidebar_filters()
+filter_caption(filters)
 
-# --- Summary tiles --------------------------------------------------------
-best = region_df.iloc[0]
-best_margin = region_df.loc[region_df["profit_margin_pct"].idxmax()]
-c1, c2, c3 = st.columns(3)
-c1.metric("Top region (revenue)", best["region"], money(best["total_revenue"]))
-c2.metric("Best margin", best_margin["region"], f"{best_margin['profit_margin_pct']:.1f}%")
-c3.metric("Total revenue", money(region_df["total_revenue"].sum()))
+kpi_row(["total_revenue", "total_profit", "gross_profit_margin"], filters)
 
 st.divider()
 
-# --- Detail table + charts -----------------------------------------------
-st.subheader("By region")
-st.dataframe(
-    region_df.rename(
-        columns={
-            "region": "Region",
-            "total_revenue": "Revenue",
-            "total_profit": "Profit",
-            "profit_margin_pct": "Margin %",
-            "total_orders": "Orders",
-        }
-    ),
-    hide_index=True,
-    use_container_width=True,
-)
+# --- Map ------------------------------------------------------------------
+st.subheader("Revenue by state")
 
-left, right = st.columns(2)
-with left:
-    st.caption("Revenue by region")
-    st.bar_chart(region_df.set_index("region")["total_revenue"], height=300)
-with right:
-    st.caption("Profit margin % by region")
-    st.bar_chart(region_df.set_index("region")["profit_margin_pct"], height=300)
+states = to_frame(state_revenue(filters.period, filters.regions))
+map_col, table_col = st.columns([3, 2], gap="large")
+
+with map_col:
+    st.altair_chart(charts.state_choropleth(states, height=420), width="stretch", theme=None)
+    st.caption(
+        "Shaded on a square-root scale — a linear ramp would leave everything "
+        "but California and New York indistinguishable."
+    )
+
+with table_col:
+    if states.empty:
+        st.info("No orders in this selection.")
+    else:
+        renamed = states.rename(
+            columns={
+                "state": "State",
+                "region": "Region",
+                "revenue": "Revenue",
+                "profit": "Profit",
+                "margin_pct": "Margin %",
+                "orders": "Orders",
+            }
+        )
+        table(
+            renamed,
+            {
+                "Revenue": st.column_config.ProgressColumn(
+                    "Revenue",
+                    format="$%,.0f",
+                    min_value=0,
+                    max_value=float(renamed["Revenue"].max()),
+                ),
+                "Profit": money_column("Profit"),
+                "Margin %": percent_column("Margin %"),
+                "Orders": count_column("Orders"),
+            },
+            height=420,
+        )
+
+st.divider()
+
+# --- Regions --------------------------------------------------------------
+st.subheader("Region summary")
+
+regions = to_frame(region_revenue(filters.period, filters.regions))
+if regions.empty:
+    st.info("No orders in this selection.")
+else:
+    chart_col, summary_col = st.columns([2, 3], gap="large")
+    with chart_col:
+        st.altair_chart(charts.region_bars(regions), width="stretch", theme=None)
+    with summary_col:
+        table(
+            regions.rename(
+                columns={
+                    "region": "Region",
+                    "total_revenue": "Revenue",
+                    "total_profit": "Profit",
+                    "profit_margin_pct": "Margin %",
+                    "total_orders": "Orders",
+                }
+            ),
+            {
+                "Revenue": money_column("Revenue"),
+                "Profit": money_column("Profit"),
+                "Margin %": percent_column("Margin %"),
+                "Orders": count_column("Orders"),
+            },
+        )
+        best = regions.loc[regions["profit_margin_pct"].idxmax()]
+        worst = regions.loc[regions["profit_margin_pct"].idxmin()]
+        st.caption(
+            f"Widest margin: **{best['region']}** at {best['profit_margin_pct']:.1f}%. "
+            f"Narrowest: **{worst['region']}** at {worst['profit_margin_pct']:.1f}%."
+        )

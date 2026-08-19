@@ -1,60 +1,109 @@
-"""Customer Intelligence — top customers and RFM segmentation."""
+"""Customer Intelligence — RFM segmentation and the top of the customer base."""
 import streamlit as st
 
-from _shared import money, page_setup, period_selector, rfm_segments, to_frame, top_customers
+from _shared import (
+    count_column,
+    filter_caption,
+    kpi_row,
+    money_column,
+    page_setup,
+    rfm_matrix,
+    rfm_segments,
+    sidebar_filters,
+    table,
+    to_frame,
+    top_customers,
+)
 
-page_setup("Customer Intelligence", "🧑‍💼")
+import charts
 
-period = period_selector()
-n = st.sidebar.slider("Top N customers", min_value=5, max_value=50, value=10, step=5)
+page_setup("Customer Intelligence", "👥")
 
-# --- Top customers --------------------------------------------------------
-st.subheader(f"Top {n} customers by revenue")
-cust_df = to_frame(top_customers(n, period))
-if cust_df.empty:
-    st.info("No data for the selected period.")
-else:
-    st.dataframe(
-        cust_df.rename(
-            columns={
-                "customer_name": "Customer",
-                "rfm_segment": "RFM segment",
-                "total_revenue": "Revenue",
-                "total_orders": "Orders",
-                "total_profit": "Profit",
-            }
-        ),
-        hide_index=True,
-        use_container_width=True,
-    )
-    st.bar_chart(cust_df.set_index("customer_name")["total_revenue"], height=320)
+st.caption(
+    "RFM segmentation built in the dbt intermediate layer: customers are scored "
+    "into quartiles on recency, frequency, and monetary value, then labelled. "
+    "The scores are a lifetime view of each customer; the filters narrow the "
+    "revenue and activity attributed to them."
+)
+
+filters = sidebar_filters(segments=True, top_n=10)
+filter_caption(filters)
+
+kpi_row(["total_customers", "total_orders", "average_order_value"], filters)
 
 st.divider()
 
-# --- RFM segments (all-time, matches the tool) ---------------------------
-st.subheader("RFM segmentation")
-st.caption("Recency / Frequency / Monetary segments from the intermediate model. All-time.")
-rfm_df = to_frame(rfm_segments())
-if not rfm_df.empty:
-    total_customers = int(rfm_df["customer_count"].sum())
-    total_revenue = rfm_df["total_revenue"].sum()
-    c1, c2 = st.columns(2)
-    c1.metric("Customers", f"{total_customers:,}")
-    c2.metric("Revenue (all segments)", money(total_revenue))
+# --- RFM ------------------------------------------------------------------
+st.subheader("How the customer base splits")
 
-    left, right = st.columns([3, 2])
-    with left:
-        st.dataframe(
-            rfm_df.rename(
+grid_col, segment_col = st.columns([3, 2], gap="large")
+
+with grid_col:
+    matrix = to_frame(rfm_matrix(filters.period, filters.regions))
+    st.altair_chart(charts.rfm_heatmap(matrix), width="stretch", theme=None)
+    st.caption(
+        "Each cell is a recency × frequency quartile pair, shaded by revenue "
+        "and labelled with its customer count. The top-right corner is the "
+        "best of the base: recent and frequent."
+    )
+
+with segment_col:
+    segments = to_frame(rfm_segments(filters.period, filters.regions))
+    if segments.empty:
+        st.info("No customers ordered in this selection.")
+    else:
+        st.altair_chart(charts.segment_revenue_bars(segments), width="stretch", theme=None)
+        table(
+            segments.rename(
                 columns={
                     "rfm_segment": "Segment",
                     "customer_count": "Customers",
                     "total_revenue": "Revenue",
-                    "avg_customer_value": "Avg customer value",
+                    "avg_customer_value": "Avg lifetime value",
                 }
             ),
-            hide_index=True,
-            use_container_width=True,
+            {
+                "Customers": count_column("Customers"),
+                "Revenue": money_column("Revenue"),
+                "Avg lifetime value": money_column("Avg lifetime value"),
+            },
         )
-    with right:
-        st.bar_chart(rfm_df.set_index("rfm_segment")["customer_count"], height=320)
+        st.caption(
+            "Average lifetime value is a whole-history figure by definition, so "
+            "it does not move with the period filter."
+        )
+
+st.divider()
+
+# --- Top customers --------------------------------------------------------
+st.subheader(f"Top {filters.top_n} customers by revenue")
+
+customers = to_frame(
+    top_customers(filters.top_n, filters.period, filters.regions, filters.segments)
+)
+if customers.empty:
+    st.info("No customers match this filter set.")
+else:
+    renamed = customers.rename(
+        columns={
+            "customer_name": "Customer",
+            "rfm_segment": "Segment",
+            "total_revenue": "Revenue",
+            "total_orders": "Orders",
+            "total_profit": "Profit",
+        }
+    )
+    table(
+        renamed,
+        {
+            "Revenue": st.column_config.ProgressColumn(
+                "Revenue",
+                format="$%,.0f",
+                min_value=0,
+                max_value=float(renamed["Revenue"].max()),
+                help="Bar length is revenue relative to the top customer in this slice.",
+            ),
+            "Profit": money_column("Profit"),
+            "Orders": count_column("Orders"),
+        },
+    )
