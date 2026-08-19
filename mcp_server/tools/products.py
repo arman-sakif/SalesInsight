@@ -1,20 +1,34 @@
 """Product analytics queries."""
 from mcp_server.db import run_query
+from mcp_server.tools._filters import in_predicate, period_predicate, where_clause
 
 
-def get_product_performance(category: str | None = None, n: int = 10) -> list[dict]:
+def get_product_performance(
+    category: str | None = None,
+    n: int = 10,
+    period: str = "all_time",
+    regions: list[str] | None = None,
+    sub_categories: list[str] | None = None,
+) -> list[dict]:
     """Return top products by revenue, optionally filtered by category.
 
     Args:
         category: One of 'Furniture', 'Office Supplies', 'Technology', or None for all.
         n: Number of products to return (default 10, max 50).
+        period: 'all_time', 'this_year', 'last_year', 'last_30_days',
+            'last_90_days', or a 4-digit year.
+        regions: Restrict to orders placed in these regions.
+        sub_categories: Restrict to these product sub-categories.
     """
     n = min(max(n, 1), 50)
-    where_clause = ""
-    params = []
-    if category:
-        where_clause = "WHERE p.category = ?"
-        params.append(category)
+    params: list = []
+    period_sql, _ = period_predicate(period, alias="f")
+    clause = where_clause(
+        period_sql,
+        in_predicate("p.category", category, params),
+        in_predicate("p.sub_category", sub_categories, params),
+        in_predicate("f.region", regions, params),
+    )
 
     sql = f"""
         SELECT
@@ -27,17 +41,36 @@ def get_product_performance(category: str | None = None, n: int = 10) -> list[di
             ROUND(AVG(f.discount) * 100, 1) AS avg_discount_pct
         FROM main.fact_sales f
         JOIN main.dim_product p ON f.product_id = p.product_id
-        {where_clause}
+        {clause}
         GROUP BY p.product_name, p.category, p.sub_category
         ORDER BY total_revenue DESC
         LIMIT {n}
     """
-    return run_query(sql, params if params else None)
+    return run_query(sql, params)
 
 
-def get_category_breakdown() -> list[dict]:
-    """Return revenue and margin by category and sub-category."""
-    sql = """
+def get_category_breakdown(
+    period: str = "all_time",
+    regions: list[str] | None = None,
+    categories: list[str] | None = None,
+) -> list[dict]:
+    """Return revenue and margin by category and sub-category.
+
+    Args:
+        period: 'all_time', 'this_year', 'last_year', 'last_30_days',
+            'last_90_days', or a 4-digit year.
+        regions: Restrict to orders placed in these regions.
+        categories: Restrict to these product categories.
+    """
+    params: list = []
+    period_sql, _ = period_predicate(period, alias="f")
+    clause = where_clause(
+        period_sql,
+        in_predicate("p.category", categories, params),
+        in_predicate("f.region", regions, params),
+    )
+
+    sql = f"""
         SELECT
             p.category,
             p.sub_category,
@@ -46,31 +79,55 @@ def get_category_breakdown() -> list[dict]:
             ROUND(AVG(f.discount) * 100, 1)                          AS avg_discount_pct
         FROM main.fact_sales f
         JOIN main.dim_product p ON f.product_id = p.product_id
+        {clause}
         GROUP BY p.category, p.sub_category
         ORDER BY total_revenue DESC
     """
-    return run_query(sql)
+    return run_query(sql, params)
 
 
-def get_discount_impact() -> list[dict]:
+def get_discount_impact(
+    period: str = "all_time",
+    regions: list[str] | None = None,
+    categories: list[str] | None = None,
+) -> list[dict]:
     """Return the discount-vs-margin analysis: order lines bucketed into
     discount bands, with revenue, average profit margin, and total profit per
     band. Higher discount bands should show progressively lower margins now
     that synthetic profit accounts for discount.
+
+    Args:
+        period: 'all_time', 'this_year', 'last_year', 'last_30_days',
+            'last_90_days', or a 4-digit year.
+        regions: Restrict to orders placed in these regions.
+        categories: Restrict to these product categories.
     """
-    sql = """
+    params: list = []
+    period_sql, _ = period_predicate(period, alias="f")
+    # dim_product is only joined when a category filter is asked for -- the band
+    # analysis itself needs nothing but fact_sales.
+    join = ""
+    category_sql = ""
+    if categories:
+        join = "JOIN main.dim_product p ON f.product_id = p.product_id"
+        category_sql = in_predicate("p.category", categories, params)
+    clause = where_clause(period_sql, category_sql, in_predicate("f.region", regions, params))
+
+    sql = f"""
         WITH banded AS (
             SELECT
                 CASE
-                    WHEN discount = 0            THEN '0%'
-                    WHEN discount <= 0.10        THEN '1-10%'
-                    WHEN discount <= 0.20        THEN '11-20%'
-                    WHEN discount <= 0.30        THEN '21-30%'
+                    WHEN f.discount = 0          THEN '0%'
+                    WHEN f.discount <= 0.10      THEN '1-10%'
+                    WHEN f.discount <= 0.20      THEN '11-20%'
+                    WHEN f.discount <= 0.30      THEN '21-30%'
                     ELSE '30%+'
                 END                                          AS discount_band,
-                sales_amount,
-                profit
-            FROM main.fact_sales
+                f.sales_amount,
+                f.profit
+            FROM main.fact_sales f
+            {join}
+            {clause}
         )
         SELECT
             discount_band,
@@ -89,4 +146,4 @@ def get_discount_impact() -> list[dict]:
                 ELSE 4
             END
     """
-    return run_query(sql)
+    return run_query(sql, params)

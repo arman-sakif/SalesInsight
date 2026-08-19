@@ -1,14 +1,19 @@
 """Regional analytics queries."""
 from mcp_server.db import run_query
+from mcp_server.tools._filters import in_predicate, period_predicate, where_clause
 
 
-def revenue_by_region(period: str = "all_time") -> list[dict]:
+def revenue_by_region(period: str = "all_time", regions: list[str] | None = None) -> list[dict]:
     """Return revenue, profit, and order counts broken down by region.
 
     Args:
-        period: 'all_time', 'this_year', 'last_year', or a 4-digit year.
+        period: 'all_time', 'this_year', 'last_year', 'last_30_days',
+            'last_90_days', or a 4-digit year.
+        regions: Restrict to these regions. None or empty means all four.
     """
-    where_clause = _period_filter(period)
+    params: list = []
+    period_sql, _ = period_predicate(period)
+    clause = where_clause(period_sql, in_predicate("region", regions, params))
 
     sql = f"""
         SELECT
@@ -18,18 +23,8 @@ def revenue_by_region(period: str = "all_time") -> list[dict]:
             ROUND(SUM(profit) / NULLIF(SUM(sales_amount), 0) * 100, 2) AS profit_margin_pct,
             COUNT(DISTINCT order_id)                                 AS total_orders
         FROM main.fact_sales
-        {where_clause}
+        {clause}
         GROUP BY region
         ORDER BY total_revenue DESC
     """
-    return run_query(sql)
-
-
-def _period_filter(period: str) -> str:
-    if period == "this_year":
-        return "WHERE order_year = YEAR(CURRENT_DATE)"
-    if period == "last_year":
-        return "WHERE order_year = YEAR(CURRENT_DATE) - 1"
-    if period.isdigit() and len(period) == 4:
-        return f"WHERE order_year = {int(period)}"
-    return ""
+    return run_query(sql, params)
