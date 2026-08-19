@@ -17,7 +17,7 @@ on:
     inputs:
       days:
         description: "Days of synthetic orders to generate, counting back from today"
-        default: "7"
+        default: "90"
 
 permissions:
   contents: write
@@ -53,7 +53,7 @@ jobs:
       # warehouse is rebuilt from scratch each run, and becomes load-bearing if
       # the warehouse is ever persisted between runs.
       - name: Generate synthetic orders through today
-        run: uv run python ingestion/synthetic_generator.py --days ${{ github.event.inputs.days || '7' }} --retain-days 365
+        run: uv run python ingestion/synthetic_generator.py --days ${{ github.event.inputs.days || '90' }} --retain-days 365
 
       - name: Build dbt models and run data tests
         working-directory: dbt_project
