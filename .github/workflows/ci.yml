@@ -42,7 +42,7 @@ jobs:
       # --retain-days is a no-op here (the run starts from a fresh warehouse),
       # but it keeps the retention policy visible and exercised in CI.
       - name: Append a week of synthetic orders
-        run: uv run python ingestion/synthetic_generator.py --days 7 --retain-days 365
+        run: uv run python ingestion/synthetic_generator.py --days 90 --retain-days 365
 
       - name: Build dbt models and run data tests
         working-directory: dbt_project
