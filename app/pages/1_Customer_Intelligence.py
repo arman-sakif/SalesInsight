@@ -2,6 +2,7 @@
 import streamlit as st
 
 from _shared import (
+    chart_mode,
     count_column,
     filter_caption,
     kpi_row,
@@ -29,6 +30,10 @@ st.caption(
 filters = sidebar_filters(segments=True, top_n=10)
 filter_caption(filters)
 
+# Resolved once per run and handed to every chart below: the palette has to
+# match the theme the viewer is actually in.
+mode = chart_mode()
+
 kpi_row(["total_customers", "total_orders", "average_order_value"], filters)
 
 st.divider()
@@ -40,7 +45,7 @@ grid_col, segment_col = st.columns([3, 2], gap="large")
 
 with grid_col:
     matrix = to_frame(rfm_matrix(filters.period, filters.regions))
-    st.altair_chart(charts.rfm_heatmap(matrix), width="stretch", theme=None)
+    st.altair_chart(charts.rfm_heatmap(matrix, mode=mode), width="stretch", theme=None)
     st.caption(
         "Each cell is a recency × frequency quartile pair, shaded by revenue "
         "and labelled with its customer count. The top-right corner is the "
@@ -52,7 +57,9 @@ with segment_col:
     if segments.empty:
         st.info("No customers ordered in this selection.")
     else:
-        st.altair_chart(charts.segment_revenue_bars(segments), width="stretch", theme=None)
+        st.altair_chart(
+            charts.segment_revenue_bars(segments, mode=mode), width="stretch", theme=None
+        )
         table(
             segments.rename(
                 columns={

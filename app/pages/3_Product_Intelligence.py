@@ -3,6 +3,7 @@ import streamlit as st
 
 from _shared import (
     category_breakdown,
+    chart_mode,
     count_column,
     discount_bins,
     discount_impact,
@@ -31,6 +32,10 @@ st.caption(
 filters = sidebar_filters(categories=True, sub_categories=True, top_n=10)
 filter_caption(filters)
 
+# Resolved once per run and handed to every chart below: the palette has to
+# match the theme the viewer is actually in.
+mode = chart_mode()
+
 kpi_row(["total_revenue", "total_units_sold", "gross_profit_margin"], filters)
 
 st.divider()
@@ -53,7 +58,7 @@ with tab_products:
     if products.empty:
         st.info("No products match this filter set.")
     else:
-        st.altair_chart(charts.top_products_bars(products), width="stretch", theme=None)
+        st.altair_chart(charts.top_products_bars(products, mode=mode), width="stretch", theme=None)
         table(
             products.rename(
                 columns={
@@ -78,7 +83,7 @@ with tab_products:
     curve = to_frame(
         pareto(filters.period, filters.regions, filters.categories, 100)
     )
-    st.altair_chart(charts.pareto_curve(curve), width="stretch", theme=None)
+    st.altair_chart(charts.pareto_curve(curve, mode=mode), width="stretch", theme=None)
     if not curve.empty:
         # The rank where cumulative share first clears 80% -- the number the
         # curve exists to produce, so it should not have to be read off an axis.
@@ -105,7 +110,7 @@ with tab_mix:
     else:
         heat_col, mix_table_col = st.columns([2, 3], gap="large")
         with heat_col:
-            st.altair_chart(charts.category_heatmap(mix), width="stretch", theme=None)
+            st.altair_chart(charts.category_heatmap(mix, mode=mode), width="stretch", theme=None)
         with mix_table_col:
             table(
                 mix.rename(
@@ -129,7 +134,7 @@ with tab_mix:
 with tab_discount:
     st.subheader("What discounting costs")
     bins = to_frame(discount_bins(filters.period, filters.regions, filters.categories))
-    st.altair_chart(charts.discount_margin(bins), width="stretch", theme=None)
+    st.altair_chart(charts.discount_margin(bins, mode=mode), width="stretch", theme=None)
 
     if not bins.empty:
         negative = bins[bins["margin_pct"] < 0]

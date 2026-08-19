@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from app import charts
+
 # AppTest resolves a relative path against the file that calls it, so page
 # paths are absolute -- otherwise they would be looked up under tests/.
 _APP = Path(__file__).resolve().parent.parent / "app"
@@ -70,11 +72,20 @@ def test_every_page_has_charts_and_a_table_view(page):
 
 @pytest.mark.parametrize("page", PAGES)
 def test_no_page_uses_the_old_default_bar_chart(page):
-    """Every chart is an explicit spec from app/charts.py, on the validated
-    palette -- not a bare st.bar_chart."""
+    """Every chart is an explicit spec from app/charts.py, on a validated
+    palette -- not a bare st.bar_chart.
+
+    Either palette counts: the app now draws in the viewer's theme, and which
+    one a test run lands in depends on what ``st.context.theme`` reports. What
+    is asserted is that the spec carries *a* palette of ours, not Vega's
+    defaults.
+    """
     at = _run(page)
+    blues = {charts.LIGHT.blue, charts.DARK.blue}
+    ramps = {charts.LIGHT.sequential[0], charts.DARK.sequential[0]}
     for chart in _charts(at):
-        assert "2a78d6" in chart.proto.spec or "cde2fb" in chart.proto.spec
+        spec = chart.proto.spec
+        assert any(hex_[1:] in spec for hex_ in blues | ramps)
 
 
 @pytest.mark.parametrize("page", PAGES)

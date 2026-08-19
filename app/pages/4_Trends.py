@@ -11,6 +11,7 @@ import streamlit as st
 from _shared import (
     ERA_HISTORICAL,
     ERA_RECENT,
+    chart_mode,
     compact_money,
     filter_caption,
     money_column,
@@ -36,6 +37,10 @@ st.caption(
 filters = sidebar_filters()
 filter_caption(filters)
 
+# Resolved once per run and handed to every chart below: the palette has to
+# match the theme the viewer is actually in.
+mode = chart_mode()
+
 # --- Recent activity ------------------------------------------------------
 st.subheader("Recent activity")
 
@@ -46,7 +51,7 @@ if recent.empty or len(recent) < 2:
         "Pick **Last 30 days**, **Last 90 days**, or the current year to see it."
     )
 else:
-    st.altair_chart(charts.revenue_trend(recent, "day"), width="stretch", theme=None)
+    st.altair_chart(charts.revenue_trend(recent, "day", mode=mode), width="stretch", theme=None)
     st.caption(
         "Daily revenue in grey, 7-day trailing average in blue. Days with no "
         "orders are plotted as zero rather than skipped, so the average always "
@@ -75,7 +80,7 @@ if historical.empty:
         "Pick **All time** or one of the year options to see it."
     )
 else:
-    st.altair_chart(charts.revenue_vs_profit(historical), width="stretch", theme=None)
+    st.altair_chart(charts.revenue_vs_profit(historical, mode=mode), width="stretch", theme=None)
     st.caption(
         "Revenue and profit share one axis on purpose. They are both dollars, "
         "and the distance between the lines is the margin story — a second "

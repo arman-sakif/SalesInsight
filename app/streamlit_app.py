@@ -13,6 +13,7 @@ from _shared import (
     ERA_HISTORICAL,
     ERA_RECENT,
     METRIC_DEFINITIONS,
+    chart_mode,
     filter_caption,
     kpi_row,
     metric_explanation,
@@ -41,6 +42,10 @@ st.caption(
 filters = sidebar_filters()
 filter_caption(filters)
 
+# Resolved once per run and handed to every chart below: the palette has to
+# match the theme the viewer is actually in.
+mode = chart_mode()
+
 # --- Headline KPIs --------------------------------------------------------
 kpi_row(
     [
@@ -65,7 +70,7 @@ st.subheader("Revenue trend")
 
 recent = to_frame(timeseries("day", filters.period, filters.regions, ERA_RECENT))
 if not recent.empty and len(recent) > 1:
-    st.altair_chart(charts.revenue_trend(recent, "day"), width="stretch", theme=None)
+    st.altair_chart(charts.revenue_trend(recent, "day", mode=mode), width="stretch", theme=None)
     st.caption(
         "Daily revenue in grey, 7-day trailing average in blue. "
         "Recent activity only — see **Trends** for the 2014–2017 history."
@@ -74,7 +79,9 @@ else:
     historical = to_frame(
         timeseries("month", filters.period, filters.regions, ERA_HISTORICAL, 0)
     )
-    st.altair_chart(charts.revenue_trend(historical, "month"), width="stretch", theme=None)
+    st.altair_chart(
+        charts.revenue_trend(historical, "month", mode=mode), width="stretch", theme=None
+    )
     st.caption(
         "Monthly revenue over the Superstore history. This selection predates "
         "the live synthetic feed — see **Trends** for both eras side by side."
@@ -89,7 +96,7 @@ map_col, region_col = st.columns([3, 2], gap="large")
 
 with map_col:
     states = to_frame(state_revenue(filters.period, filters.regions))
-    st.altair_chart(charts.state_choropleth(states), width="stretch", theme=None)
+    st.altair_chart(charts.state_choropleth(states, mode=mode), width="stretch", theme=None)
     st.caption("Revenue by state. Darker is higher; states with no orders stay unshaded.")
 
 with region_col:
@@ -97,7 +104,7 @@ with region_col:
     if regions.empty:
         st.info("No orders in this selection.")
     else:
-        st.altair_chart(charts.region_bars(regions), width="stretch", theme=None)
+        st.altair_chart(charts.region_bars(regions, mode=mode), width="stretch", theme=None)
         table(
             regions.rename(
                 columns={
