@@ -3,34 +3,30 @@
 # The colours are not picked by eye. They come from a categorical palette run
 # through a colour-vision-deficiency validator: every adjacent pair in the
 # eight-slot order clears a protan/deutan/tritan separation threshold and a
-# normal-vision floor against the surface colour set below. Charts assign slots
-# in fixed order (see app/charts.py) rather than cycling, so a series keeps its
+# normal-vision floor against the surface it is drawn on. Charts assign slots in
+# fixed order (see app/charts.py) rather than cycling, so a series keeps its
 # colour when a filter changes the series count.
 #
-# Light only, on purpose. Streamlit's chart palettes (chartCategoricalColors,
-# chartSequentialColors) are single top-level options -- unlike the surface
-# colours, they cannot be set per mode. A dark palette is not an inversion of a
-# light one; it needs its own steps re-validated against the dark surface, and
-# there is nowhere here to declare them. Shipping a [theme.dark] block would
-# therefore render light-surface chart colours on a dark background. Viewers
-# can still force dark from Streamlit's settings menu; that is their override,
-# not a mode this app claims to have designed for.
+# Both modes ship. There is no `base` here on purpose: with a [theme.light] and
+# a [theme.dark] block and nothing forcing one, the viewer's own preference
+# wins.
+#
+# The chartCategoricalColors / chartSequentialColors / chartDivergingColors
+# options below are the one part of this file that *cannot* be set per mode --
+# they are single top-level options, unlike the surface colours. That is a real
+# limitation, but not one this app runs into: it does not use Streamlit's
+# built-in chart elements. Every visual comes from app/charts.py, which sets
+# each colour explicitly, is rendered with `theme=None`, and picks its own
+# light or dark palette from `st.context.theme.type` at render time. The values
+# here are the light steps, kept in sync with that module, and they apply only
+# to a built-in chart element if one is ever added.
 
 [theme]
-base = "light"
 font = "sans-serif"
 baseRadius = "medium"
 showWidgetBorder = true
 
-backgroundColor = "#fcfcfb"          # chart surface -- charts render directly on this
-secondaryBackgroundColor = "#f0efec" # sidebar, table headers, KPI cards
-textColor = "#0b0b0b"
-primaryColor = "#2a78d6"
-borderColor = "#e1e0d9"
-linkColor = "#256abf"
-
-# Fixed slot order. Used by Streamlit's own chart elements; app/charts.py reads
-# the same values so every visual in the app shares one system.
+# Fixed slot order. app/charts.py holds the same values (plus the dark set).
 chartCategoricalColors = [
     "#2a78d6", # 1 blue
     "#eb6834", # 2 orange
@@ -43,7 +39,8 @@ chartCategoricalColors = [
 ]
 
 # Single-hue blue, light to dark, for continuous magnitude (the state
-# choropleth and the category heatmap).
+# choropleth and the category heatmap). app/charts.py reverses this for dark
+# mode, where magnitude has to read light-on-dark instead.
 chartSequentialColors = [
     "#cde2fb",
     "#b7d3f6",
@@ -70,3 +67,22 @@ chartDivergingColors = [
     "#e34948",
     "#b52c2b",
 ]
+
+[theme.light]
+backgroundColor = "#fcfcfb"          # chart surface -- charts render directly on this
+secondaryBackgroundColor = "#f0efec" # sidebar, table headers, KPI cards
+textColor = "#0b0b0b"
+primaryColor = "#2a78d6"
+borderColor = "#e1e0d9"
+linkColor = "#256abf"
+
+[theme.dark]
+# Not an inversion of the block above: the dark surfaces were chosen first and
+# the chart hues in app/charts.py were then re-validated against this
+# background, rather than the light steps being lightened to fit.
+backgroundColor = "#1a1a19"          # chart surface -- charts render directly on this
+secondaryBackgroundColor = "#0d0d0d" # sidebar, table headers, KPI cards
+textColor = "#ffffff"
+primaryColor = "#3987e5"
+borderColor = "#2c2c2a"
+linkColor = "#86b6ef"

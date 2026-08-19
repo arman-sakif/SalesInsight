@@ -2,6 +2,7 @@
 import streamlit as st
 
 from _shared import (
+    chart_mode,
     count_column,
     filter_caption,
     kpi_row,
@@ -28,6 +29,10 @@ st.caption(
 filters = sidebar_filters()
 filter_caption(filters)
 
+# Resolved once per run and handed to every chart below: the palette has to
+# match the theme the viewer is actually in.
+mode = chart_mode()
+
 kpi_row(["total_revenue", "total_profit", "gross_profit_margin"], filters)
 
 st.divider()
@@ -39,7 +44,9 @@ states = to_frame(state_revenue(filters.period, filters.regions))
 map_col, table_col = st.columns([3, 2], gap="large")
 
 with map_col:
-    st.altair_chart(charts.state_choropleth(states, height=420), width="stretch", theme=None)
+    st.altair_chart(
+        charts.state_choropleth(states, height=420, mode=mode), width="stretch", theme=None
+    )
     st.caption(
         "Shaded on a square-root scale — a linear ramp would leave everything "
         "but California and New York indistinguishable."
@@ -86,7 +93,7 @@ if regions.empty:
 else:
     chart_col, summary_col = st.columns([2, 3], gap="large")
     with chart_col:
-        st.altair_chart(charts.region_bars(regions), width="stretch", theme=None)
+        st.altair_chart(charts.region_bars(regions, mode=mode), width="stretch", theme=None)
     with summary_col:
         table(
             regions.rename(

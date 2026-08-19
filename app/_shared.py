@@ -26,7 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from app import queries
+from app import charts, queries
 from app.queries import ERA_HISTORICAL, ERA_RECENT, to_frame
 from mcp_server.tools.customers import get_rfm_segments, get_top_customers
 from mcp_server.tools.metrics import METRIC_DEFINITIONS, explain_metric, query_metric
@@ -102,6 +102,31 @@ def page_setup(title: str, icon: str = "📊") -> None:
     """Apply consistent page config and header."""
     st.set_page_config(page_title=f"SalesInsight — {title}", page_icon=icon, layout="wide")
     st.title(f"{icon} {title}")
+
+
+def chart_mode() -> str:
+    """Which palette the charts should draw in: ``"light"`` or ``"dark"``.
+
+    Streamlit's config can set surface colours per mode but not chart palettes
+    -- ``chartCategoricalColors`` and friends are single top-level options. So
+    the choice is made here instead and passed down to ``app.charts``, which
+    keeps a validated palette for each mode. That module takes no dependency on
+    Streamlit; this function is the whole of the coupling.
+
+    ``st.context.theme.type`` is documented as unreliable at two moments: the
+    first run of a session, and the run during which the viewer switches theme
+    (streamlit#11920). Both resolve on the next rerun, so the cost is at most
+    one frame in the wrong palette -- acceptable, and cheaper than forcing a
+    rerun on every first paint to chase it. Everything unexpected, including the
+    older Streamlit versions that have no ``context.theme`` at all, falls back
+    to light rather than raising: a page that renders in the wrong palette is a
+    blemish, a page that raises is not a page.
+    """
+    try:
+        mode = getattr(st.context.theme, "type", None)
+    except Exception:  # noqa: BLE001 - any failure here means "we don't know"
+        return charts.DEFAULT_MODE
+    return mode if mode in charts.PALETTES else charts.DEFAULT_MODE
 
 
 def filter_caption(filters: Filters) -> None:
@@ -450,6 +475,7 @@ __all__ = [
     "METRIC_DEFINITIONS",
     "Filters",
     "page_setup",
+    "chart_mode",
     "filter_caption",
     "sidebar_filters",
     "kpi_row",

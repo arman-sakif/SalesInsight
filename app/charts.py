@@ -6,75 +6,181 @@ this adds no dependency.
 
 **Colour is assigned, not picked.** The categorical hues below are a validated
 eight-slot order -- every adjacent pair clears a colour-vision-deficiency
-separation threshold and a normal-vision floor against the light surface this
-app renders on (see .streamlit/config.toml). Two rules follow from that and are
-worth stating because breaking either is easy and silent:
+separation threshold and a normal-vision floor against the surface it renders
+on. Two rules follow from that and are worth stating because breaking either is
+easy and silent:
 
 * Slots are assigned in fixed order and never cycled. A ninth series folds into
   "Other" rather than getting a generated hue.
 * Colour follows the entity, not its rank. Every categorical scale here pins an
   explicit ``domain``, so filtering a region out cannot repaint the survivors.
 
+**Two palettes, one per theme.** A dark palette is not an inversion of a light
+one -- it is its own set of steps, re-validated against the dark surface -- so
+:data:`LIGHT` and :data:`DARK` are declared separately and picked by
+:func:`palette` from the ``mode`` each builder is called with. Streamlit's own
+``chartCategoricalColors``/``chartSequentialColors`` config options have no
+per-mode variant, which is why the choice is made here in Python instead: this
+module sets every colour explicitly and the app renders with ``theme=None``, so
+that config limit only governs Streamlit's built-in chart elements, which this
+app does not use. The caller resolves the mode (see ``app._shared.chart_mode``);
+this module deliberately imports no Streamlit.
+
 Charts are built with ``theme=None`` at the call site so these colours reach the
 browser unmodified; the axis and grid chrome that Streamlit's own theme would
 otherwise supply is set here instead.
 """
+from dataclasses import dataclass
+
 import altair as alt
 import pandas as pd
 
 # --- Palette -------------------------------------------------------------
-# Categorical slots, in the validated order.
-BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED = (
-    "#2a78d6",
-    "#eb6834",
-    "#1baf7a",
-    "#eda100",
-    "#e87ba4",
-    "#008300",
-    "#4a3aa7",
-    "#e34948",
+
+
+@dataclass(frozen=True)
+class Palette:
+    """One theme's worth of colour: eight categorical slots, a sequential ramp,
+    and the chrome the marks sit on."""
+
+    mode: str
+    categorical: tuple[str, ...]
+    sequential: tuple[str, ...]
+    surface: str
+    ink: str
+    ink_secondary: str
+    ink_muted: str
+    grid: str
+    axis: str
+
+    # Named slots, so a chart can ask for "the blue one" rather than index a
+    # tuple and leave the reader to count.
+    @property
+    def blue(self) -> str:
+        return self.categorical[0]
+
+    @property
+    def orange(self) -> str:
+        return self.categorical[1]
+
+    @property
+    def aqua(self) -> str:
+        return self.categorical[2]
+
+    @property
+    def yellow(self) -> str:
+        return self.categorical[3]
+
+    @property
+    def red(self) -> str:
+        return self.categorical[7]
+
+    @property
+    def de_emphasis(self) -> str:
+        """Context series, when one series is the story."""
+        return self.ink_muted
+
+    @property
+    def region_colors(self) -> list[str]:
+        return list(self.categorical[:4])
+
+    @property
+    def category_colors(self) -> list[str]:
+        return list(self.categorical[:3])
+
+
+# Light: validated against the #fcfcfb surface.
+LIGHT = Palette(
+    mode="light",
+    categorical=(
+        "#2a78d6",  # 1 blue
+        "#eb6834",  # 2 orange
+        "#1baf7a",  # 3 aqua
+        "#eda100",  # 4 yellow
+        "#e87ba4",  # 5 magenta
+        "#008300",  # 6 green
+        "#4a3aa7",  # 7 violet
+        "#e34948",  # 8 red
+    ),
+    # Single hue, light to dark: more is darker against a light page.
+    sequential=(
+        "#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec",
+        "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab",
+    ),
+    surface="#fcfcfb",
+    ink="#0b0b0b",
+    ink_secondary="#52514e",
+    ink_muted="#898781",
+    grid="#e1e0d9",
+    axis="#c3c2b7",
 )
-CATEGORICAL = [BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED]
 
-# Single hue, light to dark, for continuous magnitude.
-SEQUENTIAL = [
-    "#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec",
-    "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab",
-]
+# Dark: re-validated against the #1a1a19 surface rather than derived from the
+# light steps. Worst adjacent separation under simulated colour-vision
+# deficiency 8.4 dE, normal vision 19.8, and the four hues that sit below 3:1
+# against the light page all clear it against this one.
+DARK = Palette(
+    mode="dark",
+    categorical=(
+        "#3987e5",  # 1 blue
+        "#d95926",  # 2 orange
+        "#199e70",  # 3 aqua
+        "#c98500",  # 4 yellow
+        "#d55181",  # 5 magenta
+        "#008300",  # 6 green
+        "#9085e9",  # 7 violet
+        "#e66767",  # 8 red
+    ),
+    # The same ramp read the other way. On a dark surface more has to be
+    # *lighter*, or magnitude runs backwards against the background.
+    sequential=tuple(reversed(LIGHT.sequential)),
+    surface="#1a1a19",
+    ink="#ffffff",
+    ink_secondary="#c3c2b7",
+    ink_muted="#898781",
+    grid="#2c2c2a",
+    axis="#383835",
+)
 
-# Chart chrome. Text never wears a series colour -- identity comes from the
-# coloured mark beside it.
-SURFACE = "#fcfcfb"
-INK = "#0b0b0b"
-INK_SECONDARY = "#52514e"
-INK_MUTED = "#898781"
-GRID = "#e1e0d9"
-AXIS = "#c3c2b7"
-DE_EMPHASIS = "#898781"  # context series, when one series is the story
+PALETTES = {"light": LIGHT, "dark": DARK}
+DEFAULT_MODE = "light"
+
+
+def palette(mode: str | Palette | None = None) -> Palette:
+    """Resolve a theme name to its palette, defaulting to light.
+
+    Anything unrecognised -- including the ``None`` Streamlit reports while a
+    theme is still settling -- falls back to light rather than raising. A chart
+    drawn in the wrong palette for one frame is a cosmetic problem; a chart that
+    raises is a broken page.
+    """
+    if isinstance(mode, Palette):
+        return mode
+    return PALETTES.get(mode or DEFAULT_MODE, LIGHT)
+
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 MONEY = "$,.0f"
 PERCENT = ".1f"
 
-# Regions get fixed slots so a region keeps its colour under any filter.
+# Regions and categories get fixed slots so either keeps its colour under any
+# filter; the hues themselves come from whichever palette is in play.
 REGION_ORDER = ["West", "East", "Central", "South"]
-REGION_COLORS = [BLUE, ORANGE, AQUA, YELLOW]
 CATEGORY_ORDER = ["Furniture", "Office Supplies", "Technology"]
-CATEGORY_COLORS = [BLUE, ORANGE, AQUA]
 
 
-def _style(chart: alt.Chart) -> alt.Chart:
+def _style(chart: alt.Chart, p: Palette) -> alt.Chart:
     """Apply the shared chrome: hairline solid grid, recessive axes, sans text."""
     return (
-        chart.configure_view(strokeWidth=0, fill=SURFACE)
+        chart.configure_view(strokeWidth=0, fill=p.surface)
         .configure_axis(
             grid=True,
-            gridColor=GRID,
+            gridColor=p.grid,
             gridWidth=1,
-            domainColor=AXIS,
-            tickColor=AXIS,
-            labelColor=INK_MUTED,
-            titleColor=INK_SECONDARY,
+            domainColor=p.axis,
+            tickColor=p.axis,
+            labelColor=p.ink_muted,
+            titleColor=p.ink_secondary,
             labelFont=FONT,
             titleFont=FONT,
             labelFontSize=11,
@@ -82,8 +188,8 @@ def _style(chart: alt.Chart) -> alt.Chart:
             titleFontWeight="normal",
         )
         .configure_legend(
-            labelColor=INK_SECONDARY,
-            titleColor=INK_SECONDARY,
+            labelColor=p.ink_secondary,
+            titleColor=p.ink_secondary,
             labelFont=FONT,
             titleFont=FONT,
             labelFontSize=11,
@@ -91,19 +197,20 @@ def _style(chart: alt.Chart) -> alt.Chart:
             symbolType="stroke",
             symbolStrokeWidth=3,
         )
-        .configure_text(font=FONT, color=INK)
-        .configure_title(font=FONT, color=INK, fontSize=13, anchor="start")
+        .configure_text(font=FONT, color=p.ink)
+        .configure_title(font=FONT, color=p.ink, fontSize=13, anchor="start")
     )
 
 
-def _empty(message: str) -> alt.Chart:
+def _empty(message: str, p: Palette) -> alt.Chart:
     """A placeholder that says why a panel is blank, rather than rendering axes
     over no data."""
     return _style(
         alt.Chart(pd.DataFrame({"msg": [message]}))
-        .mark_text(align="center", color=INK_MUTED, fontSize=13, font=FONT)
+        .mark_text(align="center", color=p.ink_muted, fontSize=13, font=FONT)
         .encode(text="msg:N")
-        .properties(height=120)
+        .properties(height=120),
+        p,
     )
 
 
@@ -114,6 +221,7 @@ def revenue_trend(
     grain: str = "day",
     show_rolling: bool = True,
     height: int = 300,
+    mode: str | None = None,
 ) -> alt.Chart:
     """Revenue over time, with the rolling average as the emphasised series.
 
@@ -122,8 +230,9 @@ def revenue_trend(
     two-colour categorical pair -- the reader is not being asked to tell two
     subjects apart, they are being shown the signal through the noise.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No orders in this selection.")
+        return _empty("No orders in this selection.", p)
 
     time_title = "Date" if grain == "day" else "Month"
     time_format = "%d %b" if grain == "day" else "%b %Y"
@@ -146,12 +255,12 @@ def revenue_trend(
     base = alt.Chart(df)
     # Area wash at ~10% under the raw series -- never a saturated block.
     area = base.mark_area(
-        color=BLUE if not has_rolling else DE_EMPHASIS, opacity=0.10
+        color=p.blue if not has_rolling else p.de_emphasis, opacity=0.10
     ).encode(x=x, y=alt.Y("revenue:Q", title="Revenue", axis=alt.Axis(format="$,.0s")))
 
     raw = base.mark_line(
         strokeWidth=2 if not has_rolling else 1.5,
-        color=BLUE if not has_rolling else DE_EMPHASIS,
+        color=p.blue if not has_rolling else p.de_emphasis,
         interpolate="monotone",
         strokeJoin="round",
         strokeCap="round",
@@ -161,7 +270,7 @@ def revenue_trend(
     if has_rolling:
         layers.append(
             base.mark_line(
-                strokeWidth=2, color=BLUE, strokeJoin="round", strokeCap="round"
+                strokeWidth=2, color=p.blue, strokeJoin="round", strokeCap="round"
             ).encode(x=x, y=alt.Y("revenue_rolling:Q", title="Revenue"))
         )
 
@@ -171,12 +280,15 @@ def revenue_trend(
         fields=["period_start"], nearest=True, on="pointerover", empty=False, clear="pointerout"
     )
     rule = (
-        base.mark_rule(color=AXIS, strokeWidth=1)
+        base.mark_rule(color=p.axis, strokeWidth=1)
         .encode(x=x, opacity=alt.condition(hover, alt.value(1), alt.value(0)), tooltip=tooltip)
         .add_params(hover)
     )
+    # The 2px ring around the dot is the surface colour, so the dot reads as
+    # sitting on the page rather than merging into the line under it. That is
+    # why the ring has to follow the theme as well.
     point = base.mark_point(
-        size=90, filled=True, color=BLUE, stroke=SURFACE, strokeWidth=2
+        size=90, filled=True, color=p.blue, stroke=p.surface, strokeWidth=2
     ).encode(
         x=x,
         y=alt.Y("revenue_rolling:Q" if has_rolling else "revenue:Q"),
@@ -190,10 +302,12 @@ def revenue_trend(
         # so identity rides a caption at the call site instead. Where a real
         # legend is needed (multi-series charts below) it is always present.
         pass
-    return _style(chart)
+    return _style(chart, p)
 
 
-def revenue_vs_profit(df: pd.DataFrame, height: int = 300) -> alt.Chart:
+def revenue_vs_profit(
+    df: pd.DataFrame, height: int = 300, mode: str | None = None
+) -> alt.Chart:
     """Revenue and profit on one axis over time.
 
     Both are dollars, so they share a scale honestly -- this is deliberately not
@@ -201,8 +315,9 @@ def revenue_vs_profit(df: pd.DataFrame, height: int = 300) -> alt.Chart:
     point: it is the margin story, and a second y-scale would flatten it into a
     fake correlation.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No orders in this selection.")
+        return _empty("No orders in this selection.", p)
 
     long = df.melt(
         id_vars=["period_start"],
@@ -212,18 +327,20 @@ def revenue_vs_profit(df: pd.DataFrame, height: int = 300) -> alt.Chart:
     )
     long["measure"] = long["measure"].map({"revenue": "Revenue", "profit": "Profit"})
 
+    x = alt.X("period_start:T", title="Month", axis=alt.Axis(format="%b %Y", labelAngle=0))
+    y = alt.Y("amount:Q", title="Amount", axis=alt.Axis(format="$,.0s"))
     color = alt.Color(
         "measure:N",
         title=None,
-        scale=alt.Scale(domain=["Revenue", "Profit"], range=[BLUE, ORANGE]),
+        scale=alt.Scale(domain=["Revenue", "Profit"], range=[p.blue, p.orange]),
         legend=alt.Legend(orient="top", direction="horizontal", offset=4),
     )
     chart = (
         alt.Chart(long)
         .mark_line(strokeWidth=2, strokeJoin="round", strokeCap="round", interpolate="monotone")
         .encode(
-            x=alt.X("period_start:T", title="Month", axis=alt.Axis(format="%b %Y", labelAngle=0)),
-            y=alt.Y("amount:Q", title="Amount", axis=alt.Axis(format="$,.0s")),
+            x=x,
+            y=y,
             color=color,
             tooltip=[
                 alt.Tooltip("period_start:T", title="Month", format="%b %Y"),
@@ -233,7 +350,7 @@ def revenue_vs_profit(df: pd.DataFrame, height: int = 300) -> alt.Chart:
         )
         .properties(height=height)
     )
-    return _style(chart)
+    return _style(chart, p)
 
 
 # --- Geography -----------------------------------------------------------
@@ -260,19 +377,23 @@ _STATE_FIPS = {
 _US_STATES_TOPOJSON = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 
 
-def state_choropleth(df: pd.DataFrame, height: int = 380) -> alt.Chart:
+def state_choropleth(
+    df: pd.DataFrame, height: int = 380, mode: str | None = None
+) -> alt.Chart:
     """Revenue by US state.
 
-    Sequential single hue: the value is magnitude, so more revenue is darker.
-    The states with no orders stay at the surface-adjacent base tint rather than
-    disappearing, so "we don't sell here" is visible instead of ambiguous.
+    Sequential single hue: the value is magnitude, so more revenue reads further
+    from the page -- darker on the light theme, lighter on the dark one. States
+    with no orders stay at the base tint rather than disappearing, so "we don't
+    sell here" is visible instead of ambiguous.
 
     The basemap is fetched by the browser from a CDN at render time -- the only
     external request the app makes. The state table beside it carries every
     value, so the panel still answers the question if that request fails.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No orders in this selection.")
+        return _empty("No orders in this selection.", p)
 
     data = df.copy()
     data["fips"] = data["state"].map(_STATE_FIPS)
@@ -281,7 +402,9 @@ def state_choropleth(df: pd.DataFrame, height: int = 380) -> alt.Chart:
     states = alt.topo_feature(_US_STATES_TOPOJSON, "states")
     chart = (
         alt.Chart(states)
-        .mark_geoshape(stroke=SURFACE, strokeWidth=1)
+        # The 1px border between states is the surface colour, so it follows the
+        # theme; a fixed light hairline would glow against the dark page.
+        .mark_geoshape(stroke=p.surface, strokeWidth=1)
         .transform_lookup(
             lookup="id",
             from_=alt.LookupData(
@@ -292,7 +415,7 @@ def state_choropleth(df: pd.DataFrame, height: int = 380) -> alt.Chart:
             color=alt.Color(
                 "revenue:Q",
                 title="Revenue",
-                scale=alt.Scale(range=SEQUENTIAL, type="sqrt"),
+                scale=alt.Scale(range=list(p.sequential), type="sqrt"),
                 legend=alt.Legend(format="$,.0s", orient="right", gradientLength=200),
             ),
             tooltip=[
@@ -307,50 +430,62 @@ def state_choropleth(df: pd.DataFrame, height: int = 380) -> alt.Chart:
         .project(type="albersUsa")
         .properties(height=height)
     )
-    return _style(chart)
+    return _style(chart, p)
 
 
-def region_bars(df: pd.DataFrame, height: int = 260) -> alt.Chart:
+def region_bars(
+    df: pd.DataFrame, height: int = 260, mode: str | None = None
+) -> alt.Chart:
     """Revenue by region: one series, so one colour and no legend.
 
     A value ramp across four nominal regions would double-encode bar length as
     hue and spend the only free channel on information the bars already carry.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No orders in this selection.")
+        return _empty("No orders in this selection.", p)
 
+    tooltip = [
+        alt.Tooltip("region:N", title="Region"),
+        alt.Tooltip("total_revenue:Q", title="Revenue", format=MONEY),
+        alt.Tooltip("total_profit:Q", title="Profit", format=MONEY),
+        alt.Tooltip("profit_margin_pct:Q", title="Margin %", format=PERCENT),
+        alt.Tooltip("total_orders:Q", title="Orders", format=","),
+    ]
     base = alt.Chart(df).encode(
         y=alt.Y("region:N", title=None, sort="-x", axis=alt.Axis(labelFontSize=12)),
         x=alt.X("total_revenue:Q", title="Revenue", axis=alt.Axis(format="$,.0s")),
     )
-    bars = base.mark_bar(color=BLUE, height=20, cornerRadiusEnd=4).encode(
-        tooltip=[
-            alt.Tooltip("region:N", title="Region"),
-            alt.Tooltip("total_revenue:Q", title="Revenue", format=MONEY),
-            alt.Tooltip("total_profit:Q", title="Profit", format=MONEY),
-            alt.Tooltip("profit_margin_pct:Q", title="Margin %", format=PERCENT),
-            alt.Tooltip("total_orders:Q", title="Orders", format=","),
-        ]
-    )
+    bars = base.mark_bar(color=p.blue, height=20, cornerRadiusEnd=4).encode(tooltip=tooltip)
     # Four bars, so every one can carry its value without becoming noise.
     labels = base.mark_text(
-        align="left", dx=6, color=INK_SECONDARY, fontSize=11, font=FONT
+        align="left", dx=6, color=p.ink_secondary, fontSize=11, font=FONT
     ).encode(text=alt.Text("total_revenue:Q", format=MONEY))
-    return _style(alt.layer(bars, labels).properties(height=height))
+    return _style(alt.layer(bars, labels).properties(height=height), p)
 
 
 # --- Customers -----------------------------------------------------------
 
-def rfm_heatmap(df: pd.DataFrame, height: int = 320) -> alt.Chart:
+def rfm_heatmap(
+    df: pd.DataFrame, height: int = 320, mode: str | None = None
+) -> alt.Chart:
     """Recency x frequency grid, shaded by revenue.
 
     A grid of magnitude, so: sequential hue, and the customer count printed in
     each cell. The label colour flips by cell luminance so it always clears
     contrast against its own fill.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No customers in this selection.")
+        return _empty("No customers in this selection.", p)
 
+    tooltip = [
+        alt.Tooltip("r_score:O", title="Recency score"),
+        alt.Tooltip("f_score:O", title="Frequency score"),
+        alt.Tooltip("example_segment:N", title="Typical segment"),
+        alt.Tooltip("customers:Q", title="Customers", format=","),
+        alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
+    ]
     base = alt.Chart(df).encode(
         x=alt.X(
             "f_score:O",
@@ -363,34 +498,37 @@ def rfm_heatmap(df: pd.DataFrame, height: int = 320) -> alt.Chart:
             sort="descending",
         ),
     )
-    cells = base.mark_rect(stroke=SURFACE, strokeWidth=2, cornerRadius=4).encode(
+    # The 2px gap between cells is drawn in the surface colour, so it follows
+    # the theme too -- a fixed light stroke would glow on the dark page.
+    cells = base.mark_rect(stroke=p.surface, strokeWidth=2, cornerRadius=4).encode(
         color=alt.Color(
             "revenue:Q",
             title="Revenue",
-            scale=alt.Scale(range=SEQUENTIAL),
+            scale=alt.Scale(range=list(p.sequential)),
             legend=alt.Legend(format="$,.0s", gradientLength=180),
         ),
-        tooltip=[
-            alt.Tooltip("r_score:O", title="Recency score"),
-            alt.Tooltip("f_score:O", title="Frequency score"),
-            alt.Tooltip("example_segment:N", title="Typical segment"),
-            alt.Tooltip("customers:Q", title="Customers", format=","),
-            alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
-        ],
+        tooltip=tooltip,
     )
     midpoint = df["revenue"].max() * 0.55 if not df.empty else 0
+    # The flip is always against the cell's own fill. On the light ramp the
+    # high-revenue cells are the dark ones and want surface-coloured text; on
+    # the dark ramp they are the light ones and want ink. Same comparison,
+    # opposite pair.
+    high, low = (
+        (p.surface, p.ink_secondary) if p.mode == "light" else (p.surface, p.ink)
+    )
     labels = base.mark_text(fontSize=11, font=FONT).encode(
         text=alt.Text("customers:Q", format=","),
-        color=alt.condition(
-            alt.datum.revenue > midpoint, alt.value(SURFACE), alt.value(INK_SECONDARY)
-        ),
+        color=alt.condition(alt.datum.revenue > midpoint, alt.value(high), alt.value(low)),
     )
-    return _style(alt.layer(cells, labels).properties(height=height))
+    return _style(alt.layer(cells, labels).properties(height=height), p)
 
 
 # --- Products ------------------------------------------------------------
 
-def pareto_curve(df: pd.DataFrame, height: int = 300) -> alt.Chart:
+def pareto_curve(
+    df: pd.DataFrame, height: int = 300, mode: str | None = None
+) -> alt.Chart:
     """Cumulative share of revenue by product rank.
 
     Deliberately *not* the textbook Pareto combo chart: bars of revenue against
@@ -398,21 +536,23 @@ def pareto_curve(df: pd.DataFrame, height: int = 300) -> alt.Chart:
     them is arbitrary. The cumulative curve alone is the part that answers the
     question, and the ranked table beside it carries the per-product revenue.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No products in this selection.")
+        return _empty("No products in this selection.", p)
 
     x = alt.X("rank:Q", title="Products, ranked by revenue")
+    y = alt.Y(
+        "cumulative_pct:Q",
+        title="Cumulative share of revenue",
+        axis=alt.Axis(format=".0f", values=[0, 20, 40, 60, 80, 100]),
+        scale=alt.Scale(domain=[0, 100]),
+    )
     line = (
         alt.Chart(df)
-        .mark_line(strokeWidth=2, color=BLUE, strokeJoin="round", strokeCap="round")
+        .mark_line(strokeWidth=2, color=p.blue, strokeJoin="round", strokeCap="round")
         .encode(
             x=x,
-            y=alt.Y(
-                "cumulative_pct:Q",
-                title="Cumulative share of revenue",
-                axis=alt.Axis(format=".0f", values=[0, 20, 40, 60, 80, 100]),
-                scale=alt.Scale(domain=[0, 100]),
-            ),
+            y=y,
             tooltip=[
                 alt.Tooltip("rank:Q", title="Rank"),
                 alt.Tooltip("product_name:N", title="Product"),
@@ -424,81 +564,89 @@ def pareto_curve(df: pd.DataFrame, height: int = 300) -> alt.Chart:
     )
     area = (
         alt.Chart(df)
-        .mark_area(color=BLUE, opacity=0.10)
+        .mark_area(color=p.blue, opacity=0.10)
         .encode(x=x, y=alt.Y("cumulative_pct:Q", scale=alt.Scale(domain=[0, 100])))
     )
     # A single reference line, solid hairline -- the 80% mark is the one value
     # a reader looks for on this chart.
     rule = (
         alt.Chart(pd.DataFrame({"y": [80]}))
-        .mark_rule(color=INK_MUTED, strokeWidth=1)
+        .mark_rule(color=p.ink_muted, strokeWidth=1)
         .encode(y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 100])))
     )
     label = (
         alt.Chart(pd.DataFrame({"y": [80], "t": ["80% of revenue"]}))
-        .mark_text(align="left", dx=6, dy=-6, color=INK_MUTED, fontSize=11, font=FONT)
+        .mark_text(align="left", dx=6, dy=-6, color=p.ink_muted, fontSize=11, font=FONT)
         .encode(y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 100])), text="t:N")
     )
-    return _style(alt.layer(area, line, rule, label).properties(height=height))
+    return _style(alt.layer(area, line, rule, label).properties(height=height), p)
 
 
-def discount_margin(df: pd.DataFrame, height: int = 300) -> alt.Chart:
+def discount_margin(
+    df: pd.DataFrame, height: int = 300, mode: str | None = None
+) -> alt.Chart:
     """Profit margin by discount depth, with a zero-margin reference rule.
 
     The value has a sign, so the colour job is diverging: blue above zero, red
     below, meeting at a neutral baseline. This is the one chart in the app where
     colour carries polarity rather than identity or magnitude.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No order lines in this selection.")
+        return _empty("No order lines in this selection.", p)
 
+    tooltip = [
+        alt.Tooltip("discount_pct:Q", title="Discount band start (%)", format=".0f"),
+        alt.Tooltip("margin_pct:Q", title="Margin %", format=PERCENT),
+        alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
+        alt.Tooltip("profit:Q", title="Profit", format=MONEY),
+        alt.Tooltip("order_lines:Q", title="Order lines", format=","),
+    ]
+    x = alt.X(
+        "discount_pct:Q",
+        title="Discount applied (%)",
+        axis=alt.Axis(format=".0f", labelAngle=0),
+        scale=alt.Scale(nice=False, padding=12),
+    )
     base = alt.Chart(df).encode(
-        x=alt.X(
-            "discount_pct:Q",
-            title="Discount applied (%)",
-            axis=alt.Axis(format=".0f", labelAngle=0),
-            scale=alt.Scale(nice=False, padding=12),
-        ),
+        x=x,
         y=alt.Y("margin_pct:Q", title="Profit margin (%)", axis=alt.Axis(format=".0f")),
     )
     bars = base.mark_bar(width=14, cornerRadiusEnd=4).encode(
-        color=alt.condition(alt.datum.margin_pct >= 0, alt.value(BLUE), alt.value(RED)),
-        tooltip=[
-            alt.Tooltip("discount_pct:Q", title="Discount band start (%)", format=".0f"),
-            alt.Tooltip("margin_pct:Q", title="Margin %", format=PERCENT),
-            alt.Tooltip("revenue:Q", title="Revenue", format=MONEY),
-            alt.Tooltip("profit:Q", title="Profit", format=MONEY),
-            alt.Tooltip("order_lines:Q", title="Order lines", format=","),
-        ],
+        color=alt.condition(alt.datum.margin_pct >= 0, alt.value(p.blue), alt.value(p.red)),
+        tooltip=tooltip,
     )
     zero = (
         alt.Chart(pd.DataFrame({"y": [0]}))
-        .mark_rule(color=AXIS, strokeWidth=1)
+        .mark_rule(color=p.axis, strokeWidth=1)
         .encode(y="y:Q")
     )
-    return _style(alt.layer(bars, zero).properties(height=height))
+    return _style(alt.layer(bars, zero).properties(height=height), p)
 
 
-def category_heatmap(df: pd.DataFrame, height: int = 340) -> alt.Chart:
+def category_heatmap(
+    df: pd.DataFrame, height: int = 340, mode: str | None = None
+) -> alt.Chart:
     """Revenue by category x sub-category.
 
     Seventeen sub-categories is well past the point where colour can carry
     identity, so the grid carries it: position names the cell, and the single
     hue carries magnitude.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No products in this selection.")
+        return _empty("No products in this selection.", p)
 
     return _style(
         alt.Chart(df)
-        .mark_rect(stroke=SURFACE, strokeWidth=2, cornerRadius=4)
+        .mark_rect(stroke=p.surface, strokeWidth=2, cornerRadius=4)
         .encode(
             x=alt.X("category:N", title=None, axis=alt.Axis(labelAngle=0, labelFontSize=12)),
             y=alt.Y("sub_category:N", title=None, sort="-x"),
             color=alt.Color(
                 "total_revenue:Q",
                 title="Revenue",
-                scale=alt.Scale(range=SEQUENTIAL),
+                scale=alt.Scale(range=list(p.sequential)),
                 legend=alt.Legend(format="$,.0s", gradientLength=200),
             ),
             tooltip=[
@@ -509,18 +657,22 @@ def category_heatmap(df: pd.DataFrame, height: int = 340) -> alt.Chart:
                 alt.Tooltip("avg_discount_pct:Q", title="Avg discount %", format=PERCENT),
             ],
         )
-        .properties(height=height)
+        .properties(height=height),
+        p,
     )
 
 
-def top_products_bars(df: pd.DataFrame, height: int = 340) -> alt.Chart:
+def top_products_bars(
+    df: pd.DataFrame, height: int = 340, mode: str | None = None
+) -> alt.Chart:
     """Top products by revenue, coloured by category.
 
     Three categories, so colour can carry identity here -- with an explicit
     domain, so a category filter never repaints the survivors.
     """
+    p = palette(mode)
     if df.empty:
-        return _empty("No products in this selection.")
+        return _empty("No products in this selection.", p)
 
     return _style(
         alt.Chart(df)
@@ -531,7 +683,7 @@ def top_products_bars(df: pd.DataFrame, height: int = 340) -> alt.Chart:
             color=alt.Color(
                 "category:N",
                 title=None,
-                scale=alt.Scale(domain=CATEGORY_ORDER, range=CATEGORY_COLORS),
+                scale=alt.Scale(domain=CATEGORY_ORDER, range=p.category_colors),
                 legend=alt.Legend(orient="top", direction="horizontal", offset=4),
             ),
             tooltip=[
@@ -543,28 +695,31 @@ def top_products_bars(df: pd.DataFrame, height: int = 340) -> alt.Chart:
                 alt.Tooltip("avg_discount_pct:Q", title="Avg discount %", format=PERCENT),
             ],
         )
-        .properties(height=height)
+        .properties(height=height),
+        p,
     )
 
 
-def segment_revenue_bars(df: pd.DataFrame, height: int = 240) -> alt.Chart:
+def segment_revenue_bars(
+    df: pd.DataFrame, height: int = 240, mode: str | None = None
+) -> alt.Chart:
     """Revenue by RFM segment: one measure, one hue, values direct-labelled."""
+    p = palette(mode)
     if df.empty:
-        return _empty("No customers in this selection.")
+        return _empty("No customers in this selection.", p)
 
+    tooltip = [
+        alt.Tooltip("rfm_segment:N", title="Segment"),
+        alt.Tooltip("customer_count:Q", title="Customers", format=","),
+        alt.Tooltip("total_revenue:Q", title="Revenue", format=MONEY),
+        alt.Tooltip("avg_customer_value:Q", title="Avg lifetime value", format=MONEY),
+    ]
     base = alt.Chart(df).encode(
         y=alt.Y("rfm_segment:N", title=None, sort="-x", axis=alt.Axis(labelFontSize=12)),
         x=alt.X("total_revenue:Q", title="Revenue", axis=alt.Axis(format="$,.0s")),
     )
-    bars = base.mark_bar(color=BLUE, height=20, cornerRadiusEnd=4).encode(
-        tooltip=[
-            alt.Tooltip("rfm_segment:N", title="Segment"),
-            alt.Tooltip("customer_count:Q", title="Customers", format=","),
-            alt.Tooltip("total_revenue:Q", title="Revenue", format=MONEY),
-            alt.Tooltip("avg_customer_value:Q", title="Avg lifetime value", format=MONEY),
-        ]
-    )
+    bars = base.mark_bar(color=p.blue, height=20, cornerRadiusEnd=4).encode(tooltip=tooltip)
     labels = base.mark_text(
-        align="left", dx=6, color=INK_SECONDARY, fontSize=11, font=FONT
+        align="left", dx=6, color=p.ink_secondary, fontSize=11, font=FONT
     ).encode(text=alt.Text("total_revenue:Q", format=MONEY))
-    return _style(alt.layer(bars, labels).properties(height=height))
+    return _style(alt.layer(bars, labels).properties(height=height), p)
